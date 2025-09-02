@@ -101,3 +101,120 @@ def verify_and_register_object(image_id: int, bucket: str, key: str, expected_sh
 def enqueue_verify(*, image_id: int, bucket: str, key: str, expected_sha256: str) -> None:
     verify_and_register_object.delay(image_id, bucket, key, expected_sha256)
 
+
+def _apply_transforms(data: bytes, spec: dict) -> tuple[bytes, str, int, int]:
+    img = Image.open(io.BytesIO(data)).convert("RGB")
+    # resize
+    resize = spec.get("resize")
+    if resize:
+        width = int(resize.get("width") or 0)
+        height = int(resize.get("height") or 0)
+        if width and height:
+            img = img.resize((width, height))
+        elif width:
+            h = int(img.height * (width / img.width))
+            img = img.resize((width, h))
+        elif height:
+            w = int(img.width * (height / img.height))
+            img = img.resize((w, height))
+    # crop
+    crop = spec.get("crop")
+    if crop:
+        x, y, w, h = int(crop.get("x", 0)), int(crop.get("y", 0)), int(crop.get("width", img.width)), int(crop.get("height", img.height))
+        img = img.crop((x, y, x + w, y + h))
+    # blur (simple)
+    blur = spec.get("blur")
+    if blur:
+        try:
+            from PIL import ImageFilter
+
+            sigma = float(blur.get("sigma", 2.0))
+            img = img.filter(ImageFilter.GaussianBlur(radius=sigma))
+        except Exception:
+            pass
+    fmt = (spec.get("format") or "JPEG").upper()
+    quality = int(spec.get("quality") or 85)
+    out = io.BytesIO()
+    save_kwargs = {"quality": quality}
+    if fmt == "WEBP":
+        mime = "image/webp"
+        img.save(out, format="WEBP", quality=quality)
+    elif fmt in ("JPG", "JPEG"):
+        mime = "image/jpeg"
+        img.save(out, format="JPEG", quality=quality)
+    elif fmt == "PNG":
+        mime = "image/png"
+        img.save(out, format="PNG")
+    else:
+        mime = "image/jpeg"
+        img.save(out, format="JPEG", **save_kwargs)
+    data_out = out.getvalue()
+    return data_out, mime, img.width, img.height
+
+
+@celery_app.task(name="create_transformed_version")
+def create_transformed_version(
+    *,
+    image_id: int,
+    base_version_id: int,
+    version_id: int,
+    transform_spec: dict,
+    dest_key: str,
+    visibility: str,
+    age_rating: int,
+    alt_for_version_id: int | None,
+) -> None:
+    db: Session = SessionLocal()
+    try:
+        vbase = db.get(ImageVersion, base_version_id)
+        if not vbase:
+            return
+        s3 = get_s3()
+        obj = s3.get_object(Bucket=s3.meta.config._kwargs.get("bucket", None) or None, Key=vbase.storage_key)  # type: ignore[attr-defined]
+        # Above may not fetch bucket; prefer reading via configured bucket
+        from ..config import get_settings
+
+        settings = get_settings()
+        obj = s3.get_object(Bucket=settings.s3_bucket, Key=vbase.storage_key)
+        data: bytes = obj["Body"].read()
+        data_out, mime_out, w, h = _apply_transforms(data, transform_spec)
+        s3.put_object(Bucket=settings.s3_bucket, Key=dest_key, Body=data_out, ContentType=mime_out, ACL="private")
+
+        v = db.get(ImageVersion, version_id)
+        if not v:
+            return
+        v.mime = mime_out
+        v.width = w
+        v.height = h
+        v.bytes = len(data_out)
+        v.storage_key = dest_key
+        v.visibility = visibility
+        v.age_rating = age_rating
+        v.alt_for_version_id = alt_for_version_id
+        v.transform_spec = transform_spec
+        db.commit()
+    finally:
+        db.close()
+
+
+def enqueue_transform(
+    *,
+    image_id: int,
+    base_version_id: int,
+    version_id: int,
+    transform_spec: dict,
+    dest_key: str,
+    visibility: str,
+    age_rating: int,
+    alt_for_version_id: int | None,
+) -> None:
+    create_transformed_version.delay(
+        image_id=image_id,
+        base_version_id=base_version_id,
+        version_id=version_id,
+        transform_spec=transform_spec,
+        dest_key=dest_key,
+        visibility=visibility,
+        age_rating=age_rating,
+        alt_for_version_id=alt_for_version_id,
+    )
