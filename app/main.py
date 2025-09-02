@@ -10,6 +10,8 @@ from .config import Settings, get_settings
 from .logging import setup_logging
 from .routes.auth_routes import router as auth_router
 from .routes.image_routes import router as image_router
+from .routes.serve_routes import router as serve_router
+from .routes.external_routes import router as external_router
 
 
 @asynccontextmanager
@@ -44,3 +46,5 @@ async def healthz(settings: Settings = Depends(get_settings)) -> dict[str, str]:
 
 app.include_router(auth_router)
 app.include_router(image_router)
+app.include_router(serve_router)
+app.include_router(external_router)
