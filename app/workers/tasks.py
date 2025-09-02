@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from ..db import SessionLocal
 from ..hashing import compute_phash, get_image_dimensions, sha256_bytes
-from ..models import Image as ImageModel
+from ..models import AlbumItem, Image as ImageModel
 from ..models import ImageVersion, UserImageLink
 from ..s3 import get_s3, move_object
 from . import celery_app
@@ -218,3 +218,54 @@ def enqueue_transform(
         age_rating=age_rating,
         alt_for_version_id=alt_for_version_id,
     )
+
+
+@celery_app.task(name="generate_album_cover")
+def generate_album_cover(album_id: int) -> str:
+    from ..config import get_settings
+
+    settings = get_settings()
+    s3 = get_s3(settings)
+    # pick first 4 items
+    db: Session = SessionLocal()
+    try:
+        items = db.query(AlbumItem).filter(AlbumItem.album_id == album_id).order_by(AlbumItem.position).limit(4).all()
+        keys: list[str] = []
+        for it in items:
+            v = db.query(ImageVersion).filter(ImageVersion.image_id == it.image_id).order_by(ImageVersion.version_no).first()
+            if v and v.storage_key:
+                keys.append(v.storage_key)
+        # create mosaic
+        tiles: list[Image.Image] = []
+        for k in keys:
+            obj = s3.get_object(Bucket=settings.s3_bucket, Key=k)
+            data: bytes = obj["Body"].read()
+            im = Image.open(io.BytesIO(data)).convert("RGB")
+            im.thumbnail((256, 256))
+            tiles.append(im)
+        if not tiles:
+            # default blank
+            canvas = Image.new("RGB", (512, 512), color=(240, 240, 240))
+        else:
+            canvas = Image.new("RGB", (512, 512))
+            positions = [(0, 0), (256, 0), (0, 256), (256, 256)]
+            for i, im in enumerate(tiles[:4]):
+                canvas.paste(im, positions[i])
+        out = io.BytesIO()
+        canvas.save(out, format="WEBP", quality=80)
+        data_out = out.getvalue()
+        import hashlib
+
+        h = hashlib.sha256(data_out).hexdigest()[:8]
+        dest_key = f"albums/{album_id}/cover-{h}.webp"
+        s3.put_object(Bucket=settings.s3_bucket, Key=dest_key, Body=data_out, ContentType="image/webp", ACL="public-read")
+        return dest_key
+    finally:
+        db.close()
+
+
+def enqueue_album_cover(album_id: int) -> str:
+    # Returns expected key; generation happens async
+    key = f"albums/{album_id}/cover-pending.webp"
+    generate_album_cover.delay(album_id)
+    return key

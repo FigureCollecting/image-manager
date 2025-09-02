@@ -12,6 +12,8 @@ from .routes.auth_routes import router as auth_router
 from .routes.image_routes import router as image_router
 from .routes.serve_routes import router as serve_router
 from .routes.external_routes import router as external_router
+from .routes.album_routes import router as album_router
+from .routes.tag_routes import router as tag_router
 
 
 @asynccontextmanager
@@ -48,3 +50,5 @@ app.include_router(auth_router)
 app.include_router(image_router)
 app.include_router(serve_router)
 app.include_router(external_router)
+app.include_router(album_router)
+app.include_router(tag_router)
