@@ -8,6 +8,7 @@ from fastapi import Depends, FastAPI, Request, Response
 
 from .config import Settings, get_settings
 from .logging import setup_logging
+from .routes.auth_routes import router as auth_router
 
 
 @asynccontextmanager
@@ -39,3 +40,5 @@ async def add_request_id(request: Request, call_next):  # type: ignore[no-untype
 async def healthz(settings: Settings = Depends(get_settings)) -> dict[str, str]:
     return {"status": "ok", "service": settings.app_name}
 
+
+app.include_router(auth_router)
