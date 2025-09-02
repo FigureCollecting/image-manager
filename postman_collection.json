@@ -1,0 +1,21 @@
+{
+  "info": {
+    "name": "image-manager",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health",
+      "request": {"method": "GET", "url": "{{base_url}}/healthz"}
+    },
+    {
+      "name": "Dev Token",
+      "request": {"method": "POST", "url": "{{base_url}}/auth/dev-token", "header": [{"key": "Content-Type", "value": "application/json"}], "body": {"mode": "raw", "raw": "{\n  \"user_id\": \"<uuid>\",\n  \"tenant_id\": \"<uuid>\"\n}"}}
+    },
+    {
+      "name": "Initiate Upload",
+      "request": {"method": "POST", "url": "{{base_url}}/images/initiate-upload", "header": [{"key": "Content-Type", "value": "application/json"}], "body": {"mode": "raw", "raw": "{\n  \"filename\": \"photo.jpg\",\n  \"mime\": \"image/jpeg\",\n  \"size\": 12345\n}"}}
+    }
+  ]
+}
+
