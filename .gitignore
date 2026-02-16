@@ -34,3 +34,10 @@ data/
 uploads/
 media/
 
+# Test artifacts
+*.db
+test_debug*.db
+
+# Serena
+.serena/
+
