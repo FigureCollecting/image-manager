@@ -1,23 +1,30 @@
-from __future__ import annotations
-
-from typing import List, Optional
-
 from fastapi import APIRouter, Depends
-from sqlalchemy import Select, func, select
+from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
+from ..deps import require_auth_ctx
 from ..models import Album, AlbumTag, Image, ImageTag, Tag
+from ..policy import AuthCtx
+from ..schemas import AlbumSearchResponse, ImageSearchResponse
+from ..search import build_text_filter
 
 router = APIRouter(prefix="/search", tags=["search"])
 
 
-@router.get("/images")
-def search_images(query: Optional[str] = None, tags: Optional[str] = None, db: Session = Depends(get_db)) -> dict:
-    stmt: Select[tuple[Image]] = select(Image)
+@router.get("/images", response_model=ImageSearchResponse)
+def search_images(
+    query: str | None = None,
+    tags: str | None = None,
+    limit: int = 50,
+    after: int | None = None,
+    db: Session = Depends(get_db),  # noqa: B008
+    ctx: AuthCtx = Depends(require_auth_ctx),  # noqa: B008
+) -> ImageSearchResponse:
+    limit = max(1, min(limit, 100))
+    stmt: Select[tuple[Image]] = select(Image).where(Image.deleted_at.is_(None))
     if query:
-        q = f"%{query}%"
-        stmt = stmt.where((Image.mime.ilike(q)) | (Image.phash.ilike(q)) | (Image.storage_key.ilike(q)))
+        stmt = stmt.where(build_text_filter(db, query, Image.mime, Image.storage_key))
     if tags:
         tag_list = [t.strip() for t in tags.split(",") if t.strip()]
         if tag_list:
@@ -26,16 +33,32 @@ def search_images(query: Optional[str] = None, tags: Optional[str] = None, db: S
                 .join(Tag, Tag.id == ImageTag.tag_id, isouter=True)
                 .where(Tag.name.in_(tag_list))
             )
-    rows = db.execute(stmt.limit(100)).scalars().all()
-    return {"results": [{"id": r.id, "mime": r.mime, "sha256": r.sha256} for r in rows]}
+    if after is not None:
+        stmt = stmt.where(Image.id > after)
+    stmt = stmt.order_by(Image.id).limit(limit + 1)
+    rows = db.execute(stmt).scalars().all()
+    has_next = len(rows) > limit
+    results = rows[:limit]
+    next_cursor = results[-1].id if has_next else None
+    return ImageSearchResponse(
+        results=[{"id": r.id, "mime": r.mime, "sha256": r.sha256} for r in results],
+        next_cursor=next_cursor,
+    )
 
 
-@router.get("/albums")
-def search_albums(query: Optional[str] = None, tags: Optional[str] = None, db: Session = Depends(get_db)) -> dict:
-    stmt: Select[tuple[Album]] = select(Album)
+@router.get("/albums", response_model=AlbumSearchResponse)
+def search_albums(
+    query: str | None = None,
+    tags: str | None = None,
+    limit: int = 50,
+    after: int | None = None,
+    db: Session = Depends(get_db),  # noqa: B008
+    ctx: AuthCtx = Depends(require_auth_ctx),  # noqa: B008
+) -> AlbumSearchResponse:
+    limit = max(1, min(limit, 100))
+    stmt: Select[tuple[Album]] = select(Album).where(Album.deleted_at.is_(None))
     if query:
-        q = f"%{query}%"
-        stmt = stmt.where((Album.title.ilike(q)) | (Album.description.ilike(q)))
+        stmt = stmt.where(build_text_filter(db, query, Album.title, Album.description))
     if tags:
         tag_list = [t.strip() for t in tags.split(",") if t.strip()]
         if tag_list:
@@ -44,6 +67,14 @@ def search_albums(query: Optional[str] = None, tags: Optional[str] = None, db: S
                 .join(Tag, Tag.id == AlbumTag.tag_id, isouter=True)
                 .where(Tag.name.in_(tag_list))
             )
-    rows = db.execute(stmt.limit(100)).scalars().all()
-    return {"results": [{"id": r.id, "title": r.title} for r in rows]}
-
+    if after is not None:
+        stmt = stmt.where(Album.id > after)
+    stmt = stmt.order_by(Album.id).limit(limit + 1)
+    rows = db.execute(stmt).scalars().all()
+    has_next = len(rows) > limit
+    results = rows[:limit]
+    next_cursor = results[-1].id if has_next else None
+    return AlbumSearchResponse(
+        results=[{"id": r.id, "title": r.title} for r in results],
+        next_cursor=next_cursor,
+    )
