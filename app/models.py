@@ -38,6 +38,7 @@ class Image(Base):
     bytes: Mapped[Optional[int]] = mapped_column(BigInteger)
     storage_key: Mapped[Optional[str]] = mapped_column(String(512), unique=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=lambda: dt.datetime.now(dt.timezone.utc), nullable=False)
+    deleted_at: Mapped[Optional[dt.datetime]] = mapped_column(DateTime(timezone=True))
 
     versions: Mapped[List["ImageVersion"]] = relationship(back_populates="image", cascade="all, delete-orphan")
 
@@ -59,6 +60,7 @@ class ImageVersion(Base):
     age_rating: Mapped[int] = mapped_column(SmallInteger, default=0, nullable=False)
     alt_for_version_id: Mapped[Optional[int]] = mapped_column(Integer)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=lambda: dt.datetime.now(dt.timezone.utc), nullable=False)
+    deleted_at: Mapped[Optional[dt.datetime]] = mapped_column(DateTime(timezone=True))
 
     __table_args__ = (
         UniqueConstraint("image_id", "version_no", name="uq_image_version_no"),
@@ -74,7 +76,7 @@ class UserImageLink(Base):
     user_id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True)
     tenant_id: Mapped[Optional[str]] = mapped_column(UUID(as_uuid=False))
     image_id: Mapped[int] = mapped_column(ForeignKey("images.id", ondelete="CASCADE"), primary_key=True)
-    current_version_id: Mapped[int] = mapped_column(ForeignKey("image_versions.id", ondelete="SET NULL"))
+    current_version_id: Mapped[Optional[int]] = mapped_column(ForeignKey("image_versions.id", ondelete="SET NULL"))
     role: Mapped[Optional[str]] = mapped_column(String(32))
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=lambda: dt.datetime.now(dt.timezone.utc), nullable=False)
 
@@ -108,6 +110,7 @@ class Album(Base):
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=lambda: dt.datetime.now(dt.timezone.utc), nullable=False)
     share_token_hash: Mapped[Optional[str]] = mapped_column(String(128))
     share_age_threshold: Mapped[int] = mapped_column(SmallInteger, default=0, nullable=False)
+    deleted_at: Mapped[Optional[dt.datetime]] = mapped_column(DateTime(timezone=True))
 
     __table_args__ = (
         CheckConstraint("default_visibility in ('private','tenant','public')", name="ck_album_visibility"),

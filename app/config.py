@@ -34,6 +34,11 @@ class Settings(BaseSettings):
     s3_presign_expiry_post: int = 15 * 60
     s3_presign_expiry_get: int = 10 * 60
 
+    # DB connection pool
+    db_pool_size: int = 10
+    db_max_overflow: int = 20
+    db_pool_recycle: int = 1800  # 30 minutes
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

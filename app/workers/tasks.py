@@ -7,9 +7,8 @@ from typing import Optional
 
 from PIL import Image
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 
-from ..db import SessionLocal
+from ..db import worker_session
 from ..hashing import compute_phash, get_image_dimensions, sha256_bytes
 from ..models import AlbumItem, Image as ImageModel
 from ..models import ImageVersion, UserImageLink
@@ -56,8 +55,7 @@ def verify_and_register_object(image_id: int, bucket: str, key: str, expected_sh
 
     move_object(key, final_key)
 
-    db: Session = SessionLocal()
-    try:
+    with worker_session() as db:
         img = db.get(ImageModel, image_id)
         if not img:
             return
@@ -92,10 +90,6 @@ def verify_and_register_object(image_id: int, bucket: str, key: str, expected_sh
         for link in links:
             if link.current_version_id is None:
                 link.current_version_id = v1.id
-
-        db.commit()
-    finally:
-        db.close()
 
 
 def enqueue_verify(*, image_id: int, bucket: str, key: str, expected_sha256: str) -> None:
@@ -164,14 +158,11 @@ def create_transformed_version(
     age_rating: int,
     alt_for_version_id: int | None,
 ) -> None:
-    db: Session = SessionLocal()
-    try:
+    with worker_session() as db:
         vbase = db.get(ImageVersion, base_version_id)
         if not vbase:
             return
         s3 = get_s3()
-        obj = s3.get_object(Bucket=s3.meta.config._kwargs.get("bucket", None) or None, Key=vbase.storage_key)  # type: ignore[attr-defined]
-        # Above may not fetch bucket; prefer reading via configured bucket
         from ..config import get_settings
 
         settings = get_settings()
@@ -192,9 +183,6 @@ def create_transformed_version(
         v.age_rating = age_rating
         v.alt_for_version_id = alt_for_version_id
         v.transform_spec = transform_spec
-        db.commit()
-    finally:
-        db.close()
 
 
 def enqueue_transform(
@@ -225,10 +213,9 @@ def generate_album_cover(album_id: int) -> str:
     from ..config import get_settings
 
     settings = get_settings()
-    s3 = get_s3(settings)
+    s3 = get_s3()
     # pick first 4 items
-    db: Session = SessionLocal()
-    try:
+    with worker_session() as db:
         items = db.query(AlbumItem).filter(AlbumItem.album_id == album_id).order_by(AlbumItem.position).limit(4).all()
         keys: list[str] = []
         for it in items:
@@ -260,8 +247,6 @@ def generate_album_cover(album_id: int) -> str:
         dest_key = f"albums/{album_id}/cover-{h}.webp"
         s3.put_object(Bucket=settings.s3_bucket, Key=dest_key, Body=data_out, ContentType="image/webp", ACL="public-read")
         return dest_key
-    finally:
-        db.close()
 
 
 def enqueue_album_cover(album_id: int) -> str:
