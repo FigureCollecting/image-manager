@@ -5,9 +5,15 @@ from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
 from fastapi import Depends, FastAPI, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 
 from .config import Settings, get_settings
+from .db import get_db
 from .logging import setup_logging
+from .rate_limit import RateLimitMiddleware
 from .routes.auth_routes import router as auth_router
 from .routes.image_routes import router as image_router
 from .routes.serve_routes import router as serve_router
@@ -28,6 +34,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="image-manager", lifespan=lifespan)
 
+_settings_cors = get_settings()
+app.add_middleware(RateLimitMiddleware)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_settings_cors.cors_origins,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_headers=["*"],
+)
+
 
 @app.middleware("http")
 async def add_request_id(request: Request, call_next):  # type: ignore[no-untyped-def]
@@ -42,9 +58,38 @@ async def add_request_id(request: Request, call_next):  # type: ignore[no-untype
     return response
 
 
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    import logging
+    import uuid
+
+    logger = logging.getLogger(__name__)
+    request_id = request.headers.get("x-request-id") or str(uuid.uuid4())
+    logger.exception("unhandled_exception", extra={"request_id": request_id})
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "internal server error"},
+        headers={"x-request-id": request_id},
+    )
+
+
 @app.get("/healthz")
-async def healthz(settings: Settings = Depends(get_settings)) -> dict[str, str]:
-    return {"status": "ok", "service": settings.app_name}
+def healthz(
+    settings: Settings = Depends(get_settings),  # noqa: B008
+    db: Session = Depends(get_db),  # noqa: B008
+) -> Response:
+    db_status = "ok"
+    try:
+        db.execute(text("SELECT 1"))
+    except Exception:
+        db_status = "error"
+
+    status = "ok" if db_status == "ok" else "degraded"
+    code = 200 if status == "ok" else 503
+    return JSONResponse(
+        status_code=code,
+        content={"status": status, "service": settings.app_name, "db": db_status},
+    )
 
 
 app.include_router(auth_router)

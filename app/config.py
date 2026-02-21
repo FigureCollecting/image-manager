@@ -34,6 +34,12 @@ class Settings(BaseSettings):
     s3_presign_expiry_post: int = 15 * 60
     s3_presign_expiry_get: int = 10 * 60
 
+    # CORS
+    cors_origins: list[str] = ["*"]
+
+    # Rate limiting
+    rate_limit_per_minute: int = 120
+
     # DB connection pool
     db_pool_size: int = 10
     db_max_overflow: int = 20
