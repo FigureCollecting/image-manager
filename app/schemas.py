@@ -257,3 +257,42 @@ class ExternalAssetResponse(BaseModel):
     width: int | None = None
     height: int | None = None
     url: str
+
+
+# ---------------------------------------------------------------------------
+# Figure galleries
+# ---------------------------------------------------------------------------
+
+
+class GalleryImageItem(BaseModel):
+    url: str
+    position: int
+    caption: str | None = None
+
+
+class IngestGalleryRequest(BaseModel):
+    figureId: str
+    images: list[GalleryImageItem] = []
+
+
+class IngestGalleryResponse(BaseModel):
+    figureId: str
+    imagesQueued: int
+    duplicatesSkipped: int
+
+
+class GalleryImageSummary(BaseModel):
+    id: int
+    url: str
+    position: int
+    caption: str | None = None
+
+
+class GalleryDetailResponse(BaseModel):
+    figureId: str
+    images: list[GalleryImageSummary] = []
+    count: int
+
+
+class ReorderGalleryRequest(BaseModel):
+    imageIds: list[int] = []

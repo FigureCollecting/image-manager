@@ -118,11 +118,17 @@ def client(db_session: Session, test_settings: Settings) -> Generator[TestClient
     app.dependency_overrides[get_db] = _override_get_db
     app.dependency_overrides[get_settings] = _override_get_settings
 
+    # Clear rate-limit state so tests don't bleed into each other
+    from app.rate_limit import _buckets
+
+    _buckets.clear()
+
     # Patch Celery tasks to be no-ops so they don't require a broker
     with (
         patch("app.workers.tasks.verify_and_register_object.delay", new=MagicMock()),
         patch("app.workers.tasks.create_transformed_version.delay", new=MagicMock()),
         patch("app.workers.tasks.generate_album_cover.delay", new=MagicMock()),
+        patch("app.workers.tasks.ingest_gallery_images.delay", new=MagicMock()),
     ):
         yield TestClient(app, raise_server_exceptions=False)
 

@@ -5,12 +5,13 @@ import logging
 import mimetypes
 from typing import Optional
 
+import httpx
 from PIL import Image
 from sqlalchemy import select
 
 from ..db import worker_session
 from ..hashing import compute_phash, get_image_dimensions, sha256_bytes
-from ..models import AlbumItem, Image as ImageModel
+from ..models import AlbumItem, FigureGallery, Image as ImageModel
 from ..models import ImageVersion, UserImageLink
 from ..s3 import get_s3, move_object
 from . import celery_app
@@ -254,3 +255,79 @@ def enqueue_album_cover(album_id: int) -> str:
     key = f"albums/{album_id}/cover-pending.webp"
     generate_album_cover.delay(album_id)
     return key
+
+
+@celery_app.task(name="ingest_gallery_images")
+def ingest_gallery_images(*, figure_id: str, images: list[dict]) -> None:
+    """Download gallery images, deduplicate by SHA256, create FigureGallery records."""
+    from ..config import get_settings
+
+    settings = get_settings()
+    s3 = get_s3()
+
+    with worker_session() as db:
+        for item in images:
+            url = item["url"]
+            position = item.get("position", 0)
+            caption = item.get("caption")
+
+            # Download image
+            try:
+                resp = httpx.get(url, timeout=30)
+                resp.raise_for_status()
+            except Exception:
+                logger.warning("gallery_download_failed", extra={"url": url, "figure_id": figure_id})
+                continue
+
+            data = resp.content
+            sha = sha256_bytes(data)
+
+            # Content-addressable dedup: check if Image with this hash exists
+            existing_img = db.execute(
+                select(ImageModel).where(ImageModel.sha256 == sha)
+            ).scalar_one_or_none()
+
+            if existing_img:
+                image_id = existing_img.id
+            else:
+                # Upload to S3 and create Image record
+                mime = "image/jpeg"
+                ext = _ext_for_mime(mime)
+                storage_key = _final_key(sha, ext)
+
+                s3.put_object(
+                    Bucket=settings.s3_bucket,
+                    Key=storage_key,
+                    Body=data,
+                    ContentType=mime,
+                    ACL="private",
+                )
+
+                width, height = get_image_dimensions(data)
+                p_hash = compute_phash(data)
+
+                new_img = ImageModel(
+                    sha256=sha,
+                    phash=p_hash,
+                    mime=mime,
+                    width=width,
+                    height=height,
+                    bytes=len(data),
+                    storage_key=storage_key,
+                )
+                db.add(new_img)
+                db.flush()
+                image_id = new_img.id
+
+            # Create FigureGallery record
+            gallery_entry = FigureGallery(
+                figure_id=figure_id,
+                source_url=url,
+                image_id=image_id,
+                position=position,
+                caption=caption,
+                source="mfc",
+            )
+            db.add(gallery_entry)
+
+        db.flush()

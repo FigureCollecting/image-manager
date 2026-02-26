@@ -21,6 +21,7 @@ from .routes.external_routes import router as external_router
 from .routes.album_routes import router as album_router
 from .routes.tag_routes import router as tag_router
 from .routes.search_routes import router as search_router
+from .routes.gallery_routes import router as gallery_router
 
 
 @asynccontextmanager
@@ -99,3 +100,4 @@ app.include_router(external_router)
 app.include_router(album_router)
 app.include_router(tag_router)
 app.include_router(search_router)
+app.include_router(gallery_router)

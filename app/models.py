@@ -181,6 +181,26 @@ class ServiceClient(Base):
     scopes: Mapped[str] = mapped_column(Text, nullable=False)
 
 
+class FigureGallery(Base):
+    __tablename__ = "figure_galleries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    figure_id: Mapped[str] = mapped_column(String(200), nullable=False)
+    source_url: Mapped[str] = mapped_column(String(2048), nullable=False)
+    image_id: Mapped[int] = mapped_column(ForeignKey("images.id", ondelete="CASCADE"), nullable=False)
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    caption: Mapped[Optional[str]] = mapped_column(Text)
+    source: Mapped[str] = mapped_column(String(50), nullable=False, default="mfc")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=lambda: dt.datetime.now(dt.timezone.utc), nullable=False)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=lambda: dt.datetime.now(dt.timezone.utc), nullable=False)
+    deleted_at: Mapped[Optional[dt.datetime]] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        UniqueConstraint("figure_id", "source_url", name="uq_figure_source_url"),
+        Index("ix_figure_galleries_figure_id", "figure_id"),
+    )
+
+
 # Useful indexes
 Index("ix_image_versions_image_id_visibility", ImageVersion.image_id, ImageVersion.visibility)
 Index("ix_album_title_trgm", Album.title)
