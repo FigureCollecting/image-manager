@@ -181,3 +181,26 @@ def make_auth_headers(test_settings: Settings):
         return {"Authorization": f"Bearer {token}"}
 
     return _make
+
+
+@pytest.fixture()
+def link_image_to_user(db_session: Session):
+    """Create a UserImageLink so the test user owns the given image."""
+    from app.models import UserImageLink
+
+    def _link(
+        image_id: int,
+        user_id: str = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        tenant_id: str = "11111111-2222-3333-4444-555555555555",
+    ) -> None:
+        link = UserImageLink(
+            user_id=user_id,
+            tenant_id=tenant_id,
+            image_id=image_id,
+            current_version_id=None,
+            role="owner",
+        )
+        db_session.add(link)
+        db_session.flush()
+
+    return _link

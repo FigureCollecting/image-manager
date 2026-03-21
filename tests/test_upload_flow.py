@@ -70,10 +70,11 @@ class TestCompleteUpload:
 
 
 class TestGetImage:
-    def test_returns_image_with_versions(self, client, auth_headers, db_session):
+    def test_returns_image_with_versions(self, client, auth_headers, db_session, link_image_to_user):
         img = Image(sha256="d" * 64, bytes=100, mime="image/png", storage_key="k/1")
         db_session.add(img)
         db_session.flush()
+        link_image_to_user(img.id)
         v = ImageVersion(
             image_id=img.id, version_no=1, transform_spec={}, mime="image/png",
             width=100, height=100, bytes=100, storage_key="k/1", visibility="private", age_rating=0,

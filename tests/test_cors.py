@@ -50,6 +50,7 @@ class TestCORSSettings:
         """Settings should have cors_origins field."""
         assert hasattr(test_settings, "cors_origins")
 
-    def test_cors_origins_default_is_wildcard(self, test_settings):
-        """Default cors_origins should allow all origins for development."""
-        assert "*" in test_settings.cors_origins
+    def test_cors_origins_default_is_explicit_allowlist(self, test_settings):
+        """Default cors_origins should be an explicit allow-list, not wildcard."""
+        assert "*" not in test_settings.cors_origins
+        assert "https://figurecollecting.com" in test_settings.cors_origins

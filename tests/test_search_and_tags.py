@@ -78,9 +78,11 @@ class TestTagAlbum:
 
 
 class TestSearchImages:
-    def test_search_by_mime(self, client, auth_headers, db_session):
+    def test_search_by_mime(self, client, auth_headers, db_session, link_image_to_user):
         img = Image(sha256="dd" * 32, bytes=50, mime="image/png", storage_key="k/dd")
         db_session.add(img)
+        db_session.flush()
+        link_image_to_user(img.id)
         db_session.commit()
 
         r = client.get("/search/images?query=png", headers=auth_headers)
@@ -93,10 +95,12 @@ class TestSearchImages:
         assert r.status_code == 200
         assert r.json()["results"] == []
 
-    def test_search_by_tags(self, client, auth_headers, db_session):
+    def test_search_by_tags(self, client, auth_headers, db_session, link_image_to_user):
         img = Image(sha256="ee" * 32, bytes=50, mime="image/jpeg", storage_key="k/ee")
         tag = Tag(name="searchable", scope="global")
         db_session.add_all([img, tag])
+        db_session.flush()
+        link_image_to_user(img.id)
         db_session.commit()
 
         # Tag the image
@@ -107,9 +111,11 @@ class TestSearchImages:
         results = r.json()["results"]
         assert any(row["id"] == img.id for row in results)
 
-    def test_search_returns_all_when_no_filter(self, client, auth_headers, db_session):
+    def test_search_returns_all_when_no_filter(self, client, auth_headers, db_session, link_image_to_user):
         img = Image(sha256="ff" * 32, bytes=50, mime="image/jpeg", storage_key="k/ff")
         db_session.add(img)
+        db_session.flush()
+        link_image_to_user(img.id)
         db_session.commit()
 
         r = client.get("/search/images", headers=auth_headers)

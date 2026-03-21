@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from .. import auth
 from ..config import Settings, get_settings
 from ..db import get_db
-from ..schemas import DevTokenRequest, DevTokenResponse
+from ..schemas import DevTokenRequest, DevTokenResponse, RefreshTokenRequest, RefreshTokenResponse
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -20,4 +20,21 @@ def issue_dev_token(payload: DevTokenRequest, settings: Settings = Depends(get_s
         raise HTTPException(status_code=400, detail=str(e)) from e
 
     return DevTokenResponse(token=token)
+
+
+@router.post("/refresh", response_model=RefreshTokenResponse)
+def refresh_token(
+    payload: RefreshTokenRequest,
+    settings: Settings = Depends(get_settings),  # noqa: B008
+) -> RefreshTokenResponse:
+    claims = auth.decode_token(settings, payload.refresh_token)
+    if not claims or claims.get("type") != "refresh":
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid or expired refresh token")
+
+    subject = claims.get("sub", "")
+    tenant_id = claims.get("ten")
+
+    access = auth.create_token(settings, subject=subject, tenant_id=tenant_id)
+    refresh = auth.create_refresh_token(settings, subject=subject, tenant_id=tenant_id)
+    return RefreshTokenResponse(access_token=access, refresh_token=refresh)
 

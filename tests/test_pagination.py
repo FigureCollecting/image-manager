@@ -1,12 +1,23 @@
 """Tests for cursor-based pagination on list endpoints."""
 
-from app.models import Album, Image
+from app.models import Album, Image, UserImageLink
 
 
 class TestImageSearchPagination:
+    def _add_linked_image(self, db_session, sha256, storage_key):
+        img = Image(sha256=sha256, bytes=100, mime="image/jpeg", storage_key=storage_key)
+        db_session.add(img)
+        db_session.flush()
+        db_session.add(UserImageLink(
+            user_id="aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            tenant_id="11111111-2222-3333-4444-555555555555",
+            image_id=img.id, role="owner",
+        ))
+        return img
+
     def test_default_limit(self, client, auth_headers, db_session):
         for i in range(5):
-            db_session.add(Image(sha256=f"{i:064d}", bytes=100, mime="image/jpeg", storage_key=f"k/pg{i}"))
+            self._add_linked_image(db_session, f"{i:064d}", f"k/pg{i}")
         db_session.commit()
 
         r = client.get("/search/images", headers=auth_headers)
@@ -17,7 +28,7 @@ class TestImageSearchPagination:
 
     def test_limit_param(self, client, auth_headers, db_session):
         for i in range(10):
-            db_session.add(Image(sha256=f"lim{i:060d}", bytes=100, mime="image/jpeg", storage_key=f"k/lim{i}"))
+            self._add_linked_image(db_session, f"lim{i:060d}", f"k/lim{i}")
         db_session.commit()
 
         r = client.get("/search/images?limit=3", headers=auth_headers)
@@ -28,7 +39,7 @@ class TestImageSearchPagination:
 
     def test_cursor_pagination(self, client, auth_headers, db_session):
         for i in range(5):
-            db_session.add(Image(sha256=f"cur{i:060d}", bytes=100, mime="image/jpeg", storage_key=f"k/cur{i}"))
+            self._add_linked_image(db_session, f"cur{i:060d}", f"k/cur{i}")
         db_session.commit()
 
         # First page
@@ -49,7 +60,7 @@ class TestImageSearchPagination:
         assert ids1.isdisjoint(ids2)
 
     def test_last_page_null_cursor(self, client, auth_headers, db_session):
-        db_session.add(Image(sha256="last" + "0" * 60, bytes=100, mime="image/jpeg", storage_key="k/last"))
+        self._add_linked_image(db_session, "last" + "0" * 60, "k/last")
         db_session.commit()
 
         r = client.get("/search/images?limit=100", headers=auth_headers)

@@ -37,10 +37,12 @@ app = FastAPI(title="image-manager", lifespan=lifespan)
 
 _settings_cors = get_settings()
 app.add_middleware(RateLimitMiddleware)
+# Never allow credentials with wildcard origins
+_cors_credentials = "*" not in _settings_cors.cors_origins
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_settings_cors.cors_origins,
-    allow_credentials=True,
+    allow_credentials=_cors_credentials,
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=["*"],
 )

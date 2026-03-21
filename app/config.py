@@ -13,12 +13,13 @@ class Settings(BaseSettings):
     app_name: str = "image-manager"
     environment: Literal["development", "production", "test"] = "development"
     log_level: str = "INFO"
-    allow_dev_tokens: bool = True
+    allow_dev_tokens: bool = False
 
     # Security
     jwt_secret: str = "dev-secret-change-me"
     jwt_algorithm: str = "HS256"
-    token_exp_minutes: int = 60 * 24
+    token_exp_minutes: int = 60
+    refresh_token_exp_minutes: int = 60 * 24 * 7
 
     # Data stores
     database_url: str = "postgresql+psycopg2://postgres:postgres@postgres:5432/image_manager"
@@ -35,7 +36,7 @@ class Settings(BaseSettings):
     s3_presign_expiry_get: int = 10 * 60
 
     # CORS
-    cors_origins: list[str] = ["*"]
+    cors_origins: list[str] = ["http://localhost:3000", "http://localhost:5051", "https://figurecollecting.com"]
 
     # Rate limiting
     rate_limit_per_minute: int = 120

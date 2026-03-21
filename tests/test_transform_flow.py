@@ -4,10 +4,11 @@ from app.models import ExternalRef, Image, ImageVersion
 
 
 class TestCreateVersion:
-    def test_create_version_from_base(self, client, auth_headers, db_session):
+    def test_create_version_from_base(self, client, auth_headers, db_session, link_image_to_user):
         img = Image(sha256="a1" * 32, bytes=100, mime="image/jpeg", storage_key="k/a1")
         db_session.add(img)
         db_session.flush()
+        link_image_to_user(img.id)
         v1 = ImageVersion(
             image_id=img.id, version_no=1, transform_spec={}, mime="image/jpeg",
             width=200, height=200, bytes=100, storage_key="k/a1", visibility="private", age_rating=0,
@@ -25,10 +26,11 @@ class TestCreateVersion:
         assert data["version_no"] == 2
         assert "storage_key" in data
 
-    def test_create_version_explicit_base(self, client, auth_headers, db_session):
+    def test_create_version_explicit_base(self, client, auth_headers, db_session, link_image_to_user):
         img = Image(sha256="a2" * 32, bytes=100, mime="image/jpeg", storage_key="k/a2")
         db_session.add(img)
         db_session.flush()
+        link_image_to_user(img.id)
         v1 = ImageVersion(
             image_id=img.id, version_no=1, transform_spec={}, mime="image/jpeg",
             width=200, height=200, bytes=100, storage_key="k/a2", visibility="private", age_rating=0,
@@ -44,9 +46,11 @@ class TestCreateVersion:
         assert r.status_code == 200
         assert r.json()["version_no"] == 2
 
-    def test_create_version_no_base_400(self, client, auth_headers, db_session):
+    def test_create_version_no_base_400(self, client, auth_headers, db_session, link_image_to_user):
         img = Image(sha256="a3" * 32, bytes=100, mime="image/jpeg", storage_key="k/a3")
         db_session.add(img)
+        db_session.flush()
+        link_image_to_user(img.id)
         db_session.commit()
         # No versions exist
         r = client.post(
@@ -58,10 +62,11 @@ class TestCreateVersion:
 
 
 class TestSetVisibility:
-    def test_set_visibility(self, client, auth_headers, db_session):
+    def test_set_visibility(self, client, auth_headers, db_session, link_image_to_user):
         img = Image(sha256="b1" * 32, bytes=100, mime="image/jpeg", storage_key="k/b1")
         db_session.add(img)
         db_session.flush()
+        link_image_to_user(img.id)
         v = ImageVersion(
             image_id=img.id, version_no=1, transform_spec={}, mime="image/jpeg",
             width=100, height=100, bytes=100, storage_key="k/b1", visibility="private", age_rating=0,
@@ -78,10 +83,11 @@ class TestSetVisibility:
         db_session.refresh(v)
         assert v.visibility == "public"
 
-    def test_set_visibility_404_wrong_image(self, client, auth_headers, db_session):
+    def test_set_visibility_404_wrong_image(self, client, auth_headers, db_session, link_image_to_user):
         img = Image(sha256="b2" * 32, bytes=100, mime="image/jpeg", storage_key="k/b2")
         db_session.add(img)
         db_session.flush()
+        link_image_to_user(img.id)
         v = ImageVersion(
             image_id=img.id, version_no=1, transform_spec={}, mime="image/jpeg",
             width=100, height=100, bytes=100, storage_key="k/b2", visibility="private", age_rating=0,
@@ -99,10 +105,11 @@ class TestSetVisibility:
 
 
 class TestExposeSafeAlt:
-    def test_expose_safe_alt(self, client, auth_headers, db_session):
+    def test_expose_safe_alt(self, client, auth_headers, db_session, link_image_to_user):
         img = Image(sha256="c1" * 32, bytes=100, mime="image/jpeg", storage_key="k/c1")
         db_session.add(img)
         db_session.flush()
+        link_image_to_user(img.id)
         v = ImageVersion(
             image_id=img.id, version_no=1, transform_spec={}, mime="image/jpeg",
             width=100, height=100, bytes=100, storage_key="k/c1", visibility="private", age_rating=18,
