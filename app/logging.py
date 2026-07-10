@@ -17,7 +17,28 @@ class JsonFormatter(logging.Formatter):
             base["exc_info"] = self.formatException(record.exc_info)
         # Attach any extra fields added via LoggerAdapter / LoggerAdapter.extra
         for key, value in record.__dict__.items():
-            if key in {"msg", "args", "levelname", "levelno", "pathname", "filename", "module", "exc_info", "exc_text", "stack_info", "lineno", "funcName", "created", "msecs", "relativeCreated", "thread", "threadName", "processName", "process", "name"}:
+            if key in {
+                "msg",
+                "args",
+                "levelname",
+                "levelno",
+                "pathname",
+                "filename",
+                "module",
+                "exc_info",
+                "exc_text",
+                "stack_info",
+                "lineno",
+                "funcName",
+                "created",
+                "msecs",
+                "relativeCreated",
+                "thread",
+                "threadName",
+                "processName",
+                "process",
+                "name",
+            }:
                 continue
             base[key] = value
         return json.dumps(base, ensure_ascii=False)
@@ -31,4 +52,3 @@ def setup_logging(level: str = "INFO") -> None:
     root.handlers.clear()
     root.setLevel(level)
     root.addHandler(handler)
-

@@ -57,8 +57,12 @@ class TestAlbumItems:
         db_session.add_all([album, img1, img2])
         db_session.commit()
 
-        r1 = client.post(f"/albums/{album.id}/items", json={"image_id": img1.id}, headers=auth_headers)
-        r2 = client.post(f"/albums/{album.id}/items", json={"image_id": img2.id}, headers=auth_headers)
+        r1 = client.post(
+            f"/albums/{album.id}/items", json={"image_id": img1.id}, headers=auth_headers
+        )
+        r2 = client.post(
+            f"/albums/{album.id}/items", json={"image_id": img2.id}, headers=auth_headers
+        )
         assert r1.json()["position"] == 0
         assert r2.json()["position"] == 1
 
@@ -69,7 +73,11 @@ class TestAlbumItems:
         db_session.commit()
 
         # Add item at position 0
-        client.post(f"/albums/{album.id}/items", json={"image_id": img.id, "position": 0}, headers=auth_headers)
+        client.post(
+            f"/albums/{album.id}/items",
+            json={"image_id": img.id, "position": 0},
+            headers=auth_headers,
+        )
 
         # Reorder: move position 0 to position 5
         r = client.put(

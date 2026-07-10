@@ -114,7 +114,13 @@ def get_album(
     album = db.get(Album, album_id)
     if not album or album.deleted_at is not None:
         raise HTTPException(status_code=404, detail="not found")
-    items = db.execute(select(AlbumItem).where(AlbumItem.album_id == album_id).order_by(AlbumItem.position)).scalars().all()
+    items = (
+        db.execute(
+            select(AlbumItem).where(AlbumItem.album_id == album_id).order_by(AlbumItem.position)
+        )
+        .scalars()
+        .all()
+    )
     return AlbumDetailResponse(
         id=album.id,
         title=album.title,

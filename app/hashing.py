@@ -31,4 +31,3 @@ def compute_phash(data: bytes) -> str:
 def get_image_dimensions(data: bytes) -> tuple[int, int]:
     img = Image.open(io.BytesIO(data))
     return img.width, img.height
-

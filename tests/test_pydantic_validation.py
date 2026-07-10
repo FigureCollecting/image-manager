@@ -3,6 +3,7 @@
 TDD: These tests should FAIL initially because routes still use Dict[str, Any].
 After wiring Pydantic models, they should all pass.
 """
+
 from __future__ import annotations
 
 from app.models import Album, Image
@@ -14,41 +15,77 @@ from app.models import Album, Image
 
 class TestInitiateUploadValidation:
     def test_missing_filename(self, client, auth_headers):
-        r = client.post("/images/initiate-upload", json={"mime": "image/jpeg", "size": 1024}, headers=auth_headers)
+        r = client.post(
+            "/images/initiate-upload",
+            json={"mime": "image/jpeg", "size": 1024},
+            headers=auth_headers,
+        )
         assert r.status_code == 422
 
     def test_missing_mime(self, client, auth_headers):
-        r = client.post("/images/initiate-upload", json={"filename": "a.jpg", "size": 1024}, headers=auth_headers)
+        r = client.post(
+            "/images/initiate-upload",
+            json={"filename": "a.jpg", "size": 1024},
+            headers=auth_headers,
+        )
         assert r.status_code == 422
 
     def test_missing_size(self, client, auth_headers):
-        r = client.post("/images/initiate-upload", json={"filename": "a.jpg", "mime": "image/jpeg"}, headers=auth_headers)
+        r = client.post(
+            "/images/initiate-upload",
+            json={"filename": "a.jpg", "mime": "image/jpeg"},
+            headers=auth_headers,
+        )
         assert r.status_code == 422
 
     def test_zero_size(self, client, auth_headers):
-        r = client.post("/images/initiate-upload", json={"filename": "a.jpg", "mime": "image/jpeg", "size": 0}, headers=auth_headers)
+        r = client.post(
+            "/images/initiate-upload",
+            json={"filename": "a.jpg", "mime": "image/jpeg", "size": 0},
+            headers=auth_headers,
+        )
         assert r.status_code == 422
 
     def test_negative_size(self, client, auth_headers):
-        r = client.post("/images/initiate-upload", json={"filename": "a.jpg", "mime": "image/jpeg", "size": -1}, headers=auth_headers)
+        r = client.post(
+            "/images/initiate-upload",
+            json={"filename": "a.jpg", "mime": "image/jpeg", "size": -1},
+            headers=auth_headers,
+        )
         assert r.status_code == 422
 
 
 class TestCompleteUploadValidation:
     def test_missing_sha256(self, client, auth_headers):
-        r = client.post("/images/complete", json={"key": "k", "mime": "image/jpeg", "size": 100}, headers=auth_headers)
+        r = client.post(
+            "/images/complete",
+            json={"key": "k", "mime": "image/jpeg", "size": 100},
+            headers=auth_headers,
+        )
         assert r.status_code == 422
 
     def test_sha256_too_short(self, client, auth_headers):
-        r = client.post("/images/complete", json={"sha256": "abc", "key": "k", "mime": "image/jpeg", "size": 100}, headers=auth_headers)
+        r = client.post(
+            "/images/complete",
+            json={"sha256": "abc", "key": "k", "mime": "image/jpeg", "size": 100},
+            headers=auth_headers,
+        )
         assert r.status_code == 422
 
     def test_missing_key(self, client, auth_headers):
-        r = client.post("/images/complete", json={"sha256": "a" * 64, "mime": "image/jpeg", "size": 100}, headers=auth_headers)
+        r = client.post(
+            "/images/complete",
+            json={"sha256": "a" * 64, "mime": "image/jpeg", "size": 100},
+            headers=auth_headers,
+        )
         assert r.status_code == 422
 
     def test_zero_size(self, client, auth_headers):
-        r = client.post("/images/complete", json={"sha256": "a" * 64, "key": "k", "mime": "image/jpeg", "size": 0}, headers=auth_headers)
+        r = client.post(
+            "/images/complete",
+            json={"sha256": "a" * 64, "key": "k", "mime": "image/jpeg", "size": 0},
+            headers=auth_headers,
+        )
         assert r.status_code == 422
 
     def test_valid_complete_response_shape(self, client, auth_headers):
@@ -95,7 +132,9 @@ class TestSetVisibilityValidation:
         assert r.status_code == 422
 
     def test_invalid_visibility(self, client, auth_headers):
-        r = client.post("/images/1/versions/1/visibility", json={"visibility": "nonsense"}, headers=auth_headers)
+        r = client.post(
+            "/images/1/versions/1/visibility", json={"visibility": "nonsense"}, headers=auth_headers
+        )
         assert r.status_code == 422
 
 
@@ -110,7 +149,9 @@ class TestCreateAlbumValidation:
         assert r.status_code == 422
 
     def test_invalid_default_visibility(self, client, auth_headers):
-        r = client.post("/albums", json={"title": "t", "default_visibility": "nonsense"}, headers=auth_headers)
+        r = client.post(
+            "/albums", json={"title": "t", "default_visibility": "nonsense"}, headers=auth_headers
+        )
         assert r.status_code == 422
 
     def test_valid_create_response_shape(self, client, auth_headers):
@@ -169,7 +210,9 @@ class TestCreateTagValidation:
         assert r.status_code == 422
 
     def test_invalid_scope(self, client, auth_headers):
-        r = client.post("/tags", json={"name": "landscape", "scope": "invalid"}, headers=auth_headers)
+        r = client.post(
+            "/tags", json={"name": "landscape", "scope": "invalid"}, headers=auth_headers
+        )
         assert r.status_code == 422
 
 
@@ -184,11 +227,15 @@ class TestCreateExternalRefValidation:
         assert r.status_code == 422
 
     def test_missing_ref_id(self, client, auth_headers):
-        r = client.post("/external/refs", json={"ref_type": "x", "image_id": 1}, headers=auth_headers)
+        r = client.post(
+            "/external/refs", json={"ref_type": "x", "image_id": 1}, headers=auth_headers
+        )
         assert r.status_code == 422
 
     def test_missing_image_id(self, client, auth_headers):
-        r = client.post("/external/refs", json={"ref_type": "x", "ref_id": "y"}, headers=auth_headers)
+        r = client.post(
+            "/external/refs", json={"ref_type": "x", "ref_id": "y"}, headers=auth_headers
+        )
         assert r.status_code == 422
 
     def test_valid_create_response_shape(self, client, auth_headers, db_session):

@@ -10,7 +10,9 @@ from sqlalchemy.orm import sessionmaker
 class TestWorkerSessionContextManager:
     def test_worker_session_commits_on_success(self, db_engine):
         """worker_session should auto-commit when block succeeds."""
-        factory = sessionmaker(bind=db_engine, autoflush=False, autocommit=False, expire_on_commit=False)
+        factory = sessionmaker(
+            bind=db_engine, autoflush=False, autocommit=False, expire_on_commit=False
+        )
         with worker_session(session_factory=factory) as db:
             img = Image(sha256="ws1" * 22, bytes=100, mime="image/jpeg", storage_key="k/ws1")
             db.add(img)
@@ -24,7 +26,9 @@ class TestWorkerSessionContextManager:
 
     def test_worker_session_rollback_on_exception(self, db_engine):
         """worker_session should rollback on exception and re-raise."""
-        factory = sessionmaker(bind=db_engine, autoflush=False, autocommit=False, expire_on_commit=False)
+        factory = sessionmaker(
+            bind=db_engine, autoflush=False, autocommit=False, expire_on_commit=False
+        )
         try:
             with worker_session(session_factory=factory) as db:
                 img = Image(sha256="ws2" * 22, bytes=100, mime="image/jpeg", storage_key="k/ws2")
@@ -43,14 +47,18 @@ class TestWorkerSessionContextManager:
 
     def test_worker_session_closes_session(self, db_engine):
         """Session should be closed after context exit."""
-        factory = sessionmaker(bind=db_engine, autoflush=False, autocommit=False, expire_on_commit=False)
+        factory = sessionmaker(
+            bind=db_engine, autoflush=False, autocommit=False, expire_on_commit=False
+        )
         with worker_session(session_factory=factory) as db:
             pass
         assert db is not None
 
     def test_worker_session_reraises_exception(self, db_engine):
         """worker_session should re-raise the original exception."""
-        factory = sessionmaker(bind=db_engine, autoflush=False, autocommit=False, expire_on_commit=False)
+        factory = sessionmaker(
+            bind=db_engine, autoflush=False, autocommit=False, expire_on_commit=False
+        )
         raised = False
         try:
             with worker_session(session_factory=factory):

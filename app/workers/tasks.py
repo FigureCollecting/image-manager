@@ -67,7 +67,11 @@ def verify_and_register_object(image_id: int, bucket: str, key: str, expected_sh
         db.flush()
 
         # Insert version 1 if not exists
-        v1 = db.execute(select(ImageVersion).where(ImageVersion.image_id == img.id, ImageVersion.version_no == 1)).scalar_one_or_none()
+        v1 = db.execute(
+            select(ImageVersion).where(
+                ImageVersion.image_id == img.id, ImageVersion.version_no == 1
+            )
+        ).scalar_one_or_none()
         if not v1:
             v1 = ImageVersion(
                 image_id=img.id,
@@ -85,7 +89,11 @@ def verify_and_register_object(image_id: int, bucket: str, key: str, expected_sh
             db.flush()
 
         # Update links to point to v1 if unset
-        links = db.execute(select(UserImageLink).where(UserImageLink.image_id == img.id)).scalars().all()
+        links = (
+            db.execute(select(UserImageLink).where(UserImageLink.image_id == img.id))
+            .scalars()
+            .all()
+        )
         for link in links:
             if link.current_version_id is None:
                 link.current_version_id = v1.id
@@ -113,7 +121,12 @@ def _apply_transforms(data: bytes, spec: dict) -> tuple[bytes, str, int, int]:
     # crop
     crop = spec.get("crop")
     if crop:
-        x, y, w, h = int(crop.get("x", 0)), int(crop.get("y", 0)), int(crop.get("width", img.width)), int(crop.get("height", img.height))
+        x, y, w, h = (
+            int(crop.get("x", 0)),
+            int(crop.get("y", 0)),
+            int(crop.get("width", img.width)),
+            int(crop.get("height", img.height)),
+        )
         img = img.crop((x, y, x + w, y + h))
     # blur (simple)
     blur = spec.get("blur")
@@ -168,7 +181,13 @@ def create_transformed_version(
         obj = s3.get_object(Bucket=settings.s3_bucket, Key=vbase.storage_key)
         data: bytes = obj["Body"].read()
         data_out, mime_out, w, h = _apply_transforms(data, transform_spec)
-        s3.put_object(Bucket=settings.s3_bucket, Key=dest_key, Body=data_out, ContentType=mime_out, ACL="private")
+        s3.put_object(
+            Bucket=settings.s3_bucket,
+            Key=dest_key,
+            Body=data_out,
+            ContentType=mime_out,
+            ACL="private",
+        )
 
         v = db.get(ImageVersion, version_id)
         if not v:
@@ -215,10 +234,21 @@ def generate_album_cover(album_id: int) -> str:
     s3 = get_s3()
     # pick first 4 items
     with worker_session() as db:
-        items = db.query(AlbumItem).filter(AlbumItem.album_id == album_id).order_by(AlbumItem.position).limit(4).all()
+        items = (
+            db.query(AlbumItem)
+            .filter(AlbumItem.album_id == album_id)
+            .order_by(AlbumItem.position)
+            .limit(4)
+            .all()
+        )
         keys: list[str] = []
         for it in items:
-            v = db.query(ImageVersion).filter(ImageVersion.image_id == it.image_id).order_by(ImageVersion.version_no).first()
+            v = (
+                db.query(ImageVersion)
+                .filter(ImageVersion.image_id == it.image_id)
+                .order_by(ImageVersion.version_no)
+                .first()
+            )
             if v and v.storage_key:
                 keys.append(v.storage_key)
         # create mosaic
@@ -244,7 +274,13 @@ def generate_album_cover(album_id: int) -> str:
 
         h = hashlib.sha256(data_out).hexdigest()[:8]
         dest_key = f"albums/{album_id}/cover-{h}.webp"
-        s3.put_object(Bucket=settings.s3_bucket, Key=dest_key, Body=data_out, ContentType="image/webp", ACL="public-read")
+        s3.put_object(
+            Bucket=settings.s3_bucket,
+            Key=dest_key,
+            Body=data_out,
+            ContentType="image/webp",
+            ACL="public-read",
+        )
         return dest_key
 
 

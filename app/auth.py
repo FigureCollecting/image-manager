@@ -67,4 +67,3 @@ def issue_dev_token(
     if not user_id:
         raise ValueError("user_id required for user tokens")
     return create_token(settings, subject=user_id, tenant_id=tenant_id, scopes=[])
-

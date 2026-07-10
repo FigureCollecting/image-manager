@@ -9,8 +9,16 @@ class TestCreateVersion:
         db_session.add(img)
         db_session.flush()
         v1 = ImageVersion(
-            image_id=img.id, version_no=1, transform_spec={}, mime="image/jpeg",
-            width=200, height=200, bytes=100, storage_key="k/a1", visibility="private", age_rating=0,
+            image_id=img.id,
+            version_no=1,
+            transform_spec={},
+            mime="image/jpeg",
+            width=200,
+            height=200,
+            bytes=100,
+            storage_key="k/a1",
+            visibility="private",
+            age_rating=0,
         )
         db_session.add(v1)
         db_session.commit()
@@ -30,8 +38,16 @@ class TestCreateVersion:
         db_session.add(img)
         db_session.flush()
         v1 = ImageVersion(
-            image_id=img.id, version_no=1, transform_spec={}, mime="image/jpeg",
-            width=200, height=200, bytes=100, storage_key="k/a2", visibility="private", age_rating=0,
+            image_id=img.id,
+            version_no=1,
+            transform_spec={},
+            mime="image/jpeg",
+            width=200,
+            height=200,
+            bytes=100,
+            storage_key="k/a2",
+            visibility="private",
+            age_rating=0,
         )
         db_session.add(v1)
         db_session.commit()
@@ -63,8 +79,16 @@ class TestSetVisibility:
         db_session.add(img)
         db_session.flush()
         v = ImageVersion(
-            image_id=img.id, version_no=1, transform_spec={}, mime="image/jpeg",
-            width=100, height=100, bytes=100, storage_key="k/b1", visibility="private", age_rating=0,
+            image_id=img.id,
+            version_no=1,
+            transform_spec={},
+            mime="image/jpeg",
+            width=100,
+            height=100,
+            bytes=100,
+            storage_key="k/b1",
+            visibility="private",
+            age_rating=0,
         )
         db_session.add(v)
         db_session.commit()
@@ -83,8 +107,16 @@ class TestSetVisibility:
         db_session.add(img)
         db_session.flush()
         v = ImageVersion(
-            image_id=img.id, version_no=1, transform_spec={}, mime="image/jpeg",
-            width=100, height=100, bytes=100, storage_key="k/b2", visibility="private", age_rating=0,
+            image_id=img.id,
+            version_no=1,
+            transform_spec={},
+            mime="image/jpeg",
+            width=100,
+            height=100,
+            bytes=100,
+            storage_key="k/b2",
+            visibility="private",
+            age_rating=0,
         )
         db_session.add(v)
         db_session.commit()
@@ -104,8 +136,16 @@ class TestExposeSafeAlt:
         db_session.add(img)
         db_session.flush()
         v = ImageVersion(
-            image_id=img.id, version_no=1, transform_spec={}, mime="image/jpeg",
-            width=100, height=100, bytes=100, storage_key="k/c1", visibility="private", age_rating=18,
+            image_id=img.id,
+            version_no=1,
+            transform_spec={},
+            mime="image/jpeg",
+            width=100,
+            height=100,
+            bytes=100,
+            storage_key="k/c1",
+            visibility="private",
+            age_rating=18,
         )
         db_session.add(v)
         db_session.commit()
@@ -127,8 +167,16 @@ class TestExternalRefs:
         db_session.add(img)
         db_session.flush()
         v = ImageVersion(
-            image_id=img.id, version_no=1, transform_spec={}, mime="image/jpeg",
-            width=200, height=200, bytes=100, storage_key="k/d1", visibility="public", age_rating=0,
+            image_id=img.id,
+            version_no=1,
+            transform_spec={},
+            mime="image/jpeg",
+            width=200,
+            height=200,
+            bytes=100,
+            storage_key="k/d1",
+            visibility="public",
+            age_rating=0,
         )
         db_session.add(v)
         db_session.commit()
@@ -165,8 +213,16 @@ class TestExternalRefs:
         db_session.add(img)
         db_session.flush()
         v = ImageVersion(
-            image_id=img.id, version_no=1, transform_spec={}, mime="image/jpeg",
-            width=200, height=200, bytes=100, storage_key="k/d2", visibility="public", age_rating=0,
+            image_id=img.id,
+            version_no=1,
+            transform_spec={},
+            mime="image/jpeg",
+            width=200,
+            height=200,
+            bytes=100,
+            storage_key="k/d2",
+            visibility="public",
+            age_rating=0,
         )
         db_session.add(v)
         db_session.commit()

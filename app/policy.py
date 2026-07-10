@@ -12,7 +12,13 @@ class AuthCtx:
     safe_mode: bool = False
 
 
-def can_view_version(ctx: AuthCtx | None, version_visibility: str, owner_tenant_id: str | None, version_age: int, share_threshold: int | None = None) -> bool:
+def can_view_version(
+    ctx: AuthCtx | None,
+    version_visibility: str,
+    owner_tenant_id: str | None,
+    version_age: int,
+    share_threshold: int | None = None,
+) -> bool:
     # Public visible to anyone
     if version_visibility == "public":
         return True
@@ -34,4 +40,3 @@ def can_view_version(ctx: AuthCtx | None, version_visibility: str, owner_tenant_
     if share_threshold is not None:
         threshold = max(threshold, share_threshold)
     return version_age <= threshold
-

@@ -16,7 +16,9 @@ if not _settings.database_url.startswith("sqlite"):
     _engine_kwargs["pool_size"] = _settings.db_pool_size
     _engine_kwargs["max_overflow"] = _settings.db_max_overflow
 engine = create_engine(_settings.database_url, **_engine_kwargs)
-SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False, future=True)
+SessionLocal = sessionmaker(
+    bind=engine, autoflush=False, autocommit=False, expire_on_commit=False, future=True
+)
 
 
 def get_db() -> Generator[Session, None, None]:
@@ -41,4 +43,3 @@ def worker_session(session_factory: sessionmaker | None = None) -> Generator[Ses
         raise
     finally:
         db.close()
-

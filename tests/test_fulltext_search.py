@@ -32,7 +32,9 @@ class TestImageFullTextSearch:
         assert img.id in ids
 
     def test_search_case_insensitive(self, client, auth_headers, db_session):
-        img = Image(sha256="ft2" * 22, bytes=100, mime="image/jpeg", storage_key="photos/SUNSET.jpg")
+        img = Image(
+            sha256="ft2" * 22, bytes=100, mime="image/jpeg", storage_key="photos/SUNSET.jpg"
+        )
         db_session.add(img)
         db_session.commit()
 

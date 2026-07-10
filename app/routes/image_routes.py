@@ -56,7 +56,9 @@ def complete_upload(
     img = db.execute(select(Image).where(Image.sha256 == payload.sha256)).scalar_one_or_none()
     created = False
     if not img:
-        img = Image(sha256=payload.sha256, bytes=payload.size, mime=payload.mime, storage_key=payload.key)
+        img = Image(
+            sha256=payload.sha256, bytes=payload.size, mime=payload.mime, storage_key=payload.key
+        )
         db.add(img)
         db.flush()
         created = True
@@ -66,7 +68,11 @@ def complete_upload(
         link = db.get(UserImageLink, {"user_id": ctx.subject, "image_id": img.id})
         if not link:
             link = UserImageLink(
-                user_id=ctx.subject, tenant_id=ctx.tenant_id, image_id=img.id, current_version_id=None, role="owner"
+                user_id=ctx.subject,
+                tenant_id=ctx.tenant_id,
+                image_id=img.id,
+                current_version_id=None,
+                role="owner",
             )
             db.add(link)
 
@@ -76,7 +82,12 @@ def complete_upload(
     try:
         from ..workers.tasks import enqueue_verify
 
-        enqueue_verify(image_id=img.id, bucket=settings.s3_bucket, key=payload.key, expected_sha256=payload.sha256)
+        enqueue_verify(
+            image_id=img.id,
+            bucket=settings.s3_bucket,
+            key=payload.key,
+            expected_sha256=payload.sha256,
+        )
     except Exception:
         pass
 
@@ -150,7 +161,11 @@ def create_version(
         base = db.get(ImageVersion, payload.base_version_id)
     if not base:
         base = (
-            db.execute(select(ImageVersion).where(ImageVersion.image_id == image_id).order_by(ImageVersion.version_no))
+            db.execute(
+                select(ImageVersion)
+                .where(ImageVersion.image_id == image_id)
+                .order_by(ImageVersion.version_no)
+            )
             .scalars()
             .first()
         )
@@ -158,11 +173,18 @@ def create_version(
         raise HTTPException(status_code=400, detail="base version not found")
 
     max_no = (
-        db.execute(select(func.max(ImageVersion.version_no)).where(ImageVersion.image_id == image_id)).scalar() or 1
+        db.execute(
+            select(func.max(ImageVersion.version_no)).where(ImageVersion.image_id == image_id)
+        ).scalar()
+        or 1
     )
     new_no = int(max_no) + 1
     fmt = (payload.transform_spec.get("format") or (base.mime or "image/jpeg")).lower()
-    ext = "jpg" if "jpeg" in fmt or "jpg" in fmt else ("png" if "png" in fmt else ("webp" if "webp" in fmt else "jpg"))
+    ext = (
+        "jpg"
+        if "jpeg" in fmt or "jpg" in fmt
+        else ("png" if "png" in fmt else ("webp" if "webp" in fmt else "jpg"))
+    )
     dest_key = f"versions/{image_id}/v{new_no}-{_short_id()}.{ext}"
 
     version = ImageVersion(
@@ -212,7 +234,9 @@ def set_visibility(
     return OkResponse(ok=True)
 
 
-@router.post("/{image_id}/versions/{version_id}/expose-safe-alt", response_model=ExposeSafeAltResponse)
+@router.post(
+    "/{image_id}/versions/{version_id}/expose-safe-alt", response_model=ExposeSafeAltResponse
+)
 def expose_safe_alt(
     image_id: int,
     version_id: int,
@@ -226,7 +250,9 @@ def expose_safe_alt(
     blur_spec = payload.blur_spec or {"sigma": 12}
     transform_spec = {"blur": blur_spec, "format": v.mime or "jpeg"}
     max_no = (
-        db.execute(select(func.max(ImageVersion.version_no)).where(ImageVersion.image_id == image_id)).scalar()
+        db.execute(
+            select(func.max(ImageVersion.version_no)).where(ImageVersion.image_id == image_id)
+        ).scalar()
         or v.version_no
     )
     new_no = int(max_no) + 1

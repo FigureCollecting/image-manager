@@ -60,4 +60,3 @@ def move_object(src_key: str, dest_key: str) -> None:
     client = get_s3()
     client.copy({"Bucket": s.s3_bucket, "Key": src_key}, s.s3_bucket, dest_key)
     client.delete_object(Bucket=s.s3_bucket, Key=src_key)
-

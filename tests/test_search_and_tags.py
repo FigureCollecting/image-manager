@@ -5,7 +5,9 @@ from app.models import Album, Image, Tag
 
 class TestCreateTag:
     def test_create_global_tag(self, client, auth_headers):
-        r = client.post("/tags", json={"name": "landscape", "scope": "global"}, headers=auth_headers)
+        r = client.post(
+            "/tags", json={"name": "landscape", "scope": "global"}, headers=auth_headers
+        )
         assert r.status_code == 200
         data = r.json()
         assert data["name"] == "landscape"
@@ -14,7 +16,11 @@ class TestCreateTag:
     def test_create_tenant_tag(self, client, auth_headers):
         r = client.post(
             "/tags",
-            json={"name": "internal", "scope": "tenant", "tenant_id": "11111111-2222-3333-4444-555555555555"},
+            json={
+                "name": "internal",
+                "scope": "tenant",
+                "tenant_id": "11111111-2222-3333-4444-555555555555",
+            },
             headers=auth_headers,
         )
         assert r.status_code == 200
