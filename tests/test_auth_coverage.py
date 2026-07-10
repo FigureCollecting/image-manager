@@ -97,6 +97,14 @@ class TestIssueDevToken:
         with pytest.raises(ValueError, match="user_id required"):
             issue_dev_token(db_session, settings)
 
+    def test_user_token_rejects_service_prefix(self, settings: Settings, db_session) -> None:
+        """deps.get_auth_ctx treats any 'service:' subject as a globally
+        trusted service principal, so the USER path must never copy a
+        'service:'-prefixed user_id into the token subject -- that would let
+        anyone mint service trust via POST /auth/dev-token."""
+        with pytest.raises(ValueError, match="service:"):
+            issue_dev_token(db_session, settings, user_id="service:x")
+
     def test_user_token_with_tenant(self, settings: Settings, db_session) -> None:
         token = issue_dev_token(db_session, settings, user_id="u1", tenant_id="t1")
         payload = decode_token(settings, token)

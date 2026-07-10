@@ -266,3 +266,9 @@ class TestPublicRoutes:
     def test_dev_token_no_auth(self, client):
         r = client.post("/auth/dev-token", json={"user_id": "test-user"})
         assert r.status_code == 200
+
+    def test_dev_token_user_path_cannot_forge_service_subject(self, client):
+        """user_id='service:x' via the user path would mint a token that
+        deps.get_auth_ctx trusts as a GLOBAL service principal. Must be 400."""
+        r = client.post("/auth/dev-token", json={"user_id": "service:x"})
+        assert r.status_code == 400
