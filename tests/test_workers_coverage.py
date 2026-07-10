@@ -245,9 +245,7 @@ class TestMoveObjectSelfMoveGuard:
         mock_client.copy.assert_called_once()
         mock_client.delete_object.assert_called_once()
 
-    def test_verify_with_key_already_final_does_not_delete_bytes(
-        self, db_session: Session
-    ) -> None:
+    def test_verify_with_key_already_final_does_not_delete_bytes(self, db_session: Session) -> None:
         """verify_and_register_object with a staging key that already equals
         the content-addressed final key (real move_object, mocked client):
         the object must survive -- no delete, storage_key unchanged."""
