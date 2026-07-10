@@ -19,6 +19,7 @@ from ..schemas import (
     OkResponse,
     ReorderGalleryRequest,
 )
+from ..url_guard import _validate_ingest_url
 from ..workers.tasks import ingest_gallery_images
 
 router = APIRouter(prefix="/galleries", tags=["galleries"])
@@ -34,6 +35,16 @@ def ingest_gallery(
     # (FigureGallery has no owner column); needs the grant model. Do NOT add a
     # service-only stopgap -- it would break the ingest flow.
     figure_id = payload.figureId
+
+    # SSRF gate (PRIMARY): the worker fetches these URLs server-side, so any
+    # internal target in the batch rejects the WHOLE request before anything
+    # is enqueued -- a mostly-legit payload cannot smuggle one internal fetch.
+    # The worker re-checks right before httpx.get (defense-in-depth).
+    for img in payload.images:
+        try:
+            _validate_ingest_url(img.url)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=f"invalid image url: {exc}") from exc
 
     # Check which source_urls already exist for this figure
     existing = (

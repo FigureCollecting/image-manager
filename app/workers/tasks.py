@@ -16,6 +16,7 @@ from ..hashing import compute_phash, detect_mime, get_image_dimensions, sha256_b
 from ..models import AlbumItem, FigureGallery, ImageVersion, UserImageLink
 from ..models import Image as ImageModel
 from ..s3 import get_s3, move_object
+from ..url_guard import _validate_ingest_url
 from . import celery_app
 from .derivatives import compute_dominant_color, compute_thumbhash
 from .grounding import compute_bottom_margin_frac, compute_contact_band
@@ -335,6 +336,16 @@ def ingest_gallery_images(*, figure_id: str, images: list[dict[str, Any]]) -> No
             position = item.get("position", 0)
             caption = item.get("caption")
             source = "mfc"
+
+            # SSRF re-check (defense-in-depth; the ingest route is the
+            # PRIMARY gate): guards direct .delay calls and entries enqueued
+            # before the route gate existed. Full hardening (DNS-rebinding
+            # defense via pinned-IP connect) is a follow-up -- see url_guard.
+            try:
+                _validate_ingest_url(url)
+            except ValueError:
+                logger.warning("gallery_url_blocked", extra={"url": url, "figure_id": figure_id})
+                continue
 
             # Download image
             try:
