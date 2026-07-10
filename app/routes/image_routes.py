@@ -79,8 +79,11 @@ def complete_upload(
         db.flush()
         created = True
 
-    # Ensure link for user tokens
-    if not ctx.is_service and ctx.subject and "-" in ctx.subject:
+    # Ensure an ownership link for any authenticated user token. Service
+    # tokens are trusted globally and own nothing, so they need no link. The
+    # old `"-" in subject` heuristic locked hyphen-less subjects out of every
+    # ownership-gated path.
+    if not ctx.is_service and ctx.subject:
         link = db.get(UserImageLink, {"user_id": ctx.subject, "image_id": img.id})
         if not link:
             link = UserImageLink(

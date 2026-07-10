@@ -68,6 +68,47 @@ class TestCompleteUpload:
         assert link is not None
         assert link.role == "owner"
 
+    def test_hyphenless_subject_gets_ownership_link(
+        self, client, make_auth_headers, db_session
+    ):
+        """A user whose subject has no hyphen (a valid 32-hex-char UUID) must
+        still get an ownership link on complete -- the old `"-" in subject`
+        heuristic locked such users out of every newly-tightened path
+        (get/serve their own image)."""
+        subject = "aaaaaaaabbbbccccddddeeeeeeeeeeee"  # valid UUID, no hyphens
+        headers = make_auth_headers(subject=subject, tenant_id=None)
+        sha = "e" * 64
+        r = client.post(
+            "/images/complete",
+            json={"sha256": sha, "key": "uploads/k", "mime": "image/jpeg", "size": 512},
+            headers=headers,
+        )
+        image_id = r.json()["image_id"]
+        link = db_session.query(UserImageLink).filter_by(image_id=image_id).first()
+        assert link is not None
+        # The UUID column normalizes to canonical (hyphenated) form on store.
+        assert str(link.user_id).replace("-", "") == subject
+        assert link.role == "owner"
+        # The owner can now read back their own (private) image -- proves the
+        # link actually resolves through the ownership gate for this subject.
+        r = client.get(f"/images/{image_id}", headers=headers)
+        assert r.status_code == 200
+
+    def test_service_token_gets_no_ownership_link(
+        self, client, service_headers, db_session
+    ):
+        """Service tokens own nothing and need no link -- they are trusted
+        globally, so no UserImageLink should be created for them."""
+        sha = "f" * 64
+        r = client.post(
+            "/images/complete",
+            json={"sha256": sha, "key": "uploads/k", "mime": "image/jpeg", "size": 512},
+            headers=service_headers,
+        )
+        image_id = r.json()["image_id"]
+        link = db_session.query(UserImageLink).filter_by(image_id=image_id).first()
+        assert link is None
+
 
 class TestGetImage:
     def test_returns_image_with_versions(
