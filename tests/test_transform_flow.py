@@ -299,6 +299,84 @@ class TestExternalRefs:
         assert data["version_id"] == v.id
         assert "url" in data
 
+    def _make_ref(self, db_session, *, sha_seed, key, ref_id, visibility, tenant_id=None):
+        from app.models import ExternalRef
+
+        img = Image(sha256=sha_seed * 32, bytes=100, mime="image/jpeg", storage_key=key)
+        db_session.add(img)
+        db_session.flush()
+        v = ImageVersion(
+            image_id=img.id,
+            version_no=1,
+            transform_spec={},
+            mime="image/jpeg",
+            width=200,
+            height=200,
+            bytes=100,
+            storage_key=key,
+            visibility=visibility,
+            age_rating=0,
+        )
+        db_session.add(v)
+        db_session.flush()
+        er = ExternalRef(
+            ref_type="post", ref_id=ref_id, image_id=img.id, version_id=v.id, tenant_id=tenant_id
+        )
+        db_session.add(er)
+        db_session.commit()
+        return img, v
+
+    def test_null_tenant_ref_unowned_image_404(self, client, auth_headers, db_session):
+        """A null-tenant ref must NOT fail open: without a UserImageLink the
+        caller gets 404 and no presigned URL."""
+        self._make_ref(
+            db_session, sha_seed="e1", key="k/e1", ref_id="nt-1", visibility="private"
+        )
+
+        r = client.get(
+            "/external/assets/by-external-ref?ref_type=post&ref_id=nt-1",
+            headers=auth_headers,
+        )
+        assert r.status_code == 404
+        assert "url" not in r.json()
+
+    def test_null_tenant_ref_owner_gets_private_url(
+        self, client, auth_headers, db_session, link_image_to_user
+    ):
+        """Real ownership must flow into can_view_version: the owner of the
+        image behind a null-tenant ref may resolve its private version."""
+        img, v = self._make_ref(
+            db_session, sha_seed="e2", key="k/e2", ref_id="nt-2", visibility="private"
+        )
+        link_image_to_user(img.id)
+        db_session.commit()
+
+        r = client.get(
+            "/external/assets/by-external-ref?ref_type=post&ref_id=nt-2",
+            headers=auth_headers,
+        )
+        assert r.status_code == 200
+        assert r.json()["url"]
+
+    def test_tenant_ref_private_version_unowned_404(self, client, auth_headers, db_session):
+        """Even with a matching ref tenant, a private version the caller does
+        not own must never yield a presigned URL."""
+        self._make_ref(
+            db_session,
+            sha_seed="e3",
+            key="k/e3",
+            ref_id="tn-1",
+            visibility="private",
+            tenant_id="11111111-2222-3333-4444-555555555555",
+        )
+
+        r = client.get(
+            "/external/assets/by-external-ref?ref_type=post&ref_id=tn-1",
+            headers=auth_headers,
+        )
+        assert r.status_code == 404
+        assert "url" not in r.json()
+
     def test_lookup_missing_ref_404(self, client, auth_headers):
         r = client.get(
             "/external/assets/by-external-ref?ref_type=nope&ref_id=nope",

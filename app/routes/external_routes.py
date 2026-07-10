@@ -12,6 +12,7 @@ from ..schemas import (
     CreateExternalRefResponse,
     ExternalAssetResponse,
 )
+from .serve_routes import _caller_owns_image
 
 router = APIRouter(prefix="/external", tags=["external"])
 
@@ -44,8 +45,17 @@ def by_external_ref(
     er = db.execute(
         select(ExternalRef).where(ExternalRef.ref_type == ref_type, ExternalRef.ref_id == ref_id)
     ).scalar_one_or_none()
-    if not er or (er.tenant_id and not ctx.is_service and er.tenant_id != ctx.tenant_id):
+    if not er:
         raise HTTPException(status_code=404, detail="not found")
+    caller_owns = _caller_owns_image(db, ctx, er.image_id)
+    if not ctx.is_service:
+        if er.tenant_id is not None:
+            if er.tenant_id != ctx.tenant_id:
+                raise HTTPException(status_code=404, detail="not found")
+        elif not caller_owns:
+            # A null-tenant ref is NOT world-visible: the caller must own the
+            # ref's image (fail closed, indistinguishable from nonexistent).
+            raise HTTPException(status_code=404, detail="not found")
     img = db.get(Image, er.image_id)
     v = (
         db.get(ImageVersion, er.version_id)
@@ -61,8 +71,10 @@ def by_external_ref(
     if not img or not v:
         raise HTTPException(status_code=404, detail="not found")
 
-    if not can_view_version(ctx, v.visibility, None, v.age_rating):
-        raise HTTPException(status_code=403, detail="forbidden")
+    # Never presign a non-public version the caller cannot view; 404 so a
+    # denied version is indistinguishable from a nonexistent one.
+    if not can_view_version(ctx, v.visibility, None, v.age_rating, caller_owns=caller_owns):
+        raise HTTPException(status_code=404, detail="not found")
 
     url = presign_get(v.storage_key)
     return ExternalAssetResponse(
