@@ -234,7 +234,10 @@ class TestPublicServe:
         assert r.status_code == 200
         assert r.headers.get("content-type") == "image/png"
 
-    def test_public_serve_private_version_403(self, client, db_session):
+    def test_public_serve_private_version_404(self, client, db_session):
+        # A non-public version on /public must 404, not 403: a 403 confirms the
+        # (image_id, version_id) exists, an enumeration oracle. serve_version
+        # already 404s; /public must match.
         img = Image(sha256="p2" * 32, bytes=100, mime="image/jpeg", storage_key="k/p2")
         db_session.add(img)
         db_session.flush()
@@ -254,7 +257,7 @@ class TestPublicServe:
         db_session.commit()
 
         r = client.get(f"/public/{img.id}@{v.id}", follow_redirects=False)
-        assert r.status_code == 403
+        assert r.status_code == 404
 
 
 class TestSafeModeAltSwap:

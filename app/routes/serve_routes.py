@@ -112,7 +112,10 @@ def public_serve(image_id: int, version_id: int, db: Session = Depends(get_db)) 
     ):
         raise HTTPException(status_code=404, detail="not found")
     if v.visibility != "public":
-        raise HTTPException(status_code=403, detail="forbidden")
+        # 404, not 403: a 403 confirms the (image_id, version_id) exists,
+        # an enumeration oracle. A non-public version must be
+        # indistinguishable from a nonexistent one.
+        raise HTTPException(status_code=404, detail="not found")
     # (image_id, version_id) is a stable, content-addressed identifier --
     # a version's bytes never change after creation -- so this is safe to
     # cache aggressively at any layer (browser, CDN).
