@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends
-from sqlalchemy import Select, or_, select
+from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
@@ -66,8 +66,13 @@ def search_albums(
 ) -> AlbumSearchResponse:
     limit = max(1, min(limit, 100))
     stmt: Select[tuple[Album]] = select(Album).where(Album.deleted_at.is_(None))
-    if not ctx.is_service and ctx.tenant_id:
-        stmt = stmt.where(or_(Album.tenant_id.is_(None), Album.tenant_id == ctx.tenant_id))
+    if not ctx.is_service:
+        # Non-service callers see ONLY their own tenant's albums. A caller
+        # without a tenant sees nothing, and null-tenant albums are never
+        # world-visible (fail closed).
+        if ctx.tenant_id is None:
+            return AlbumSearchResponse(results=[], next_cursor=None)
+        stmt = stmt.where(Album.tenant_id == ctx.tenant_id)
     if query:
         stmt = stmt.where(build_text_filter(db, query, Album.title, Album.description))
     if tags:

@@ -2,6 +2,8 @@
 
 from app.models import Album, Image, Tag
 
+_TENANT_ID = "11111111-2222-3333-4444-555555555555"
+
 
 class TestCreateTag:
     def test_create_global_tag(self, client, auth_headers):
@@ -133,7 +135,7 @@ class TestSearchImages:
 
 class TestSearchAlbums:
     def test_search_by_title(self, client, auth_headers, db_session):
-        album = Album(title="Unique Summer Vacation")
+        album = Album(title="Unique Summer Vacation", tenant_id=_TENANT_ID)
         db_session.add(album)
         db_session.commit()
 
@@ -143,7 +145,7 @@ class TestSearchAlbums:
         assert any(row["id"] == album.id for row in results)
 
     def test_search_by_description(self, client, auth_headers, db_session):
-        album = Album(title="X", description="Beach photos from Hawaii")
+        album = Album(title="X", description="Beach photos from Hawaii", tenant_id=_TENANT_ID)
         db_session.add(album)
         db_session.commit()
 
@@ -153,7 +155,7 @@ class TestSearchAlbums:
         assert any(row["id"] == album.id for row in results)
 
     def test_search_albums_by_tags(self, client, auth_headers, db_session):
-        album = Album(title="Tagged")
+        album = Album(title="Tagged", tenant_id=_TENANT_ID)
         tag = Tag(name="album_tag", scope="global")
         db_session.add_all([album, tag])
         db_session.commit()
@@ -164,3 +166,35 @@ class TestSearchAlbums:
         assert r.status_code == 200
         results = r.json()["results"]
         assert any(row["id"] == album.id for row in results)
+
+    def test_search_albums_no_tenant_token_empty(self, client, make_auth_headers, db_session):
+        # A non-service caller without a tenant must see NO albums --
+        # not the entire table.
+        db_session.add_all(
+            [
+                Album(title="Null Tenant Album", tenant_id=None),
+                Album(title="Tenanted Album", tenant_id=_TENANT_ID),
+            ]
+        )
+        db_session.commit()
+
+        headers = make_auth_headers(tenant_id=None)
+        r = client.get("/search/albums", headers=headers)
+        assert r.status_code == 200
+        assert r.json()["results"] == []
+
+    def test_search_albums_scoped_strictly_to_tenant(self, client, auth_headers, db_session):
+        # Null-tenant albums are NOT world-visible; other tenants' albums
+        # are never listed.
+        mine = Album(title="Mine", tenant_id=_TENANT_ID)
+        other = Album(title="Other Tenant", tenant_id="99999999-8888-7777-6666-555555555555")
+        orphan = Album(title="Null Tenant", tenant_id=None)
+        db_session.add_all([mine, other, orphan])
+        db_session.commit()
+
+        r = client.get("/search/albums", headers=auth_headers)
+        assert r.status_code == 200
+        ids = {row["id"] for row in r.json()["results"]}
+        assert mine.id in ids
+        assert other.id not in ids
+        assert orphan.id not in ids

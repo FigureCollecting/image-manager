@@ -71,10 +71,13 @@ class TestImageSearchPagination:
         assert data["next_cursor"] is None
 
 
+_TENANT_ID = "11111111-2222-3333-4444-555555555555"
+
+
 class TestAlbumSearchPagination:
     def test_limit_param(self, client, auth_headers, db_session):
         for i in range(5):
-            db_session.add(Album(title=f"Album {i}"))
+            db_session.add(Album(title=f"Album {i}", tenant_id=_TENANT_ID))
         db_session.commit()
 
         r = client.get("/search/albums?limit=2", headers=auth_headers)
@@ -85,7 +88,7 @@ class TestAlbumSearchPagination:
 
     def test_cursor_pagination(self, client, auth_headers, db_session):
         for i in range(4):
-            db_session.add(Album(title=f"Page {i}"))
+            db_session.add(Album(title=f"Page {i}", tenant_id=_TENANT_ID))
         db_session.commit()
 
         r1 = client.get("/search/albums?limit=2", headers=auth_headers)
