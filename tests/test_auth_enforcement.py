@@ -40,7 +40,9 @@ class TestImageRoutesRequireAuth:
 
     def test_complete_upload_with_auth(self, client, auth_headers):
         # Mock the staging object so the possession proof doesn't reach out
-        # to a real S3 endpoint; this test only asserts auth clearance.
+        # to a real S3 endpoint; this test only asserts auth clearance. The
+        # key sits in the caller's own staging namespace (subject from the
+        # auth_headers fixture) so the namespace binding clears too.
         data = b"auth-check-bytes"
         mock_s3 = MagicMock()
         mock_s3.get_object.return_value = {"Body": io.BytesIO(data)}
@@ -49,7 +51,7 @@ class TestImageRoutesRequireAuth:
                 "/images/complete",
                 json={
                     "sha256": hashlib.sha256(data).hexdigest(),
-                    "key": "uploads/k",
+                    "key": "uploads/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee/k",
                     "mime": "image/jpeg",
                     "size": len(data),
                 },

@@ -55,11 +55,32 @@ def initiate_upload(
     ctx: AuthCtx = Depends(require_auth_ctx),  # noqa: B008
 ) -> dict[str, Any]:
     settings = get_settings()
-    staging_key = f"uploads/{uuid.uuid4()}/{payload.filename}"
+    # Namespaced by the authenticated subject so complete_upload can bind the
+    # staging key back to THIS caller (see _require_caller_staging_key).
+    staging_key = f"uploads/{ctx.subject}/{uuid.uuid4()}/{payload.filename}"
     presigned = presign_post_for_upload(staging_key, content_type=payload.mime, size=payload.size)
     presigned["staging_key"] = staging_key
     presigned["bucket"] = settings.s3_bucket
     return presigned
+
+
+def _require_caller_staging_key(key: str, ctx: AuthCtx) -> None:
+    """BIND payload.key to the caller before the possession proof runs.
+    _prove_staging_possession hashes whatever object `key` points at using
+    the server's OWN S3 credentials, so by itself it only proves the object
+    exists -- not that the caller ever held its bytes. Final keys are
+    PREDICTABLE (content-addressed {sha[:2]}/{sha[2:4]}/{sha}.ext) and an
+    image's sha256 leaks publicly as its /serve ETag, so an unbound key lets
+    an attacker point the proof at the victim's already-stored object (or any
+    versions/albums key) and mint an owner link without possessing a single
+    byte. Only keys inside the caller's own staging namespace -- exactly what
+    initiate_upload issues -- may be proven. `..` segments are rejected so no
+    path-normalizing gateway in front of the object store can fold a
+    namespaced key onto a foreign one. Fails 404 in every mode,
+    indistinguishable from a missing staging object: no oracle."""
+    prefix = f"uploads/{ctx.subject}/"
+    if not ctx.subject or not key.startswith(prefix) or ".." in key.split("/"):
+        raise HTTPException(status_code=404, detail="staging object not found")
 
 
 def _prove_staging_possession(key: str, expected_sha256: str) -> None:
@@ -92,9 +113,15 @@ def complete_upload(
 ) -> CompleteUploadResponse:
     settings = get_settings()
 
-    # Proof of possession gates EVERYTHING below -- including the dedup path:
-    # when the Image row already exists, a co-owner link is minted, so the
-    # caller must still prove they hold matching bytes themselves.
+    # Two gates guard EVERYTHING below, in order: (1) the staging key must be
+    # bound to THIS caller's namespace, then (2) the object there must hash to
+    # the claimed sha256. Both are required -- the namespace check stops the
+    # proof from being pointed at someone else's stored bytes, and the hash
+    # check stops a caller from completing their own object with a foreign
+    # sha256. This includes the dedup path: when the Image row already
+    # exists, a co-owner link is minted, so the caller must still prove they
+    # hold matching bytes themselves.
+    _require_caller_staging_key(payload.key, ctx)
     _prove_staging_possession(payload.key, payload.sha256)
 
     # Idempotent by sha256

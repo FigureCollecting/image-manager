@@ -14,9 +14,46 @@ from botocore.exceptions import ClientError
 _S3 = "app.routes.image_routes.get_s3"
 _SERVE_S3 = "app.routes.serve_routes.get_s3"
 
+#: Subject baked into the `auth_headers` fixture. Staging keys are namespaced
+#: by the authenticated subject, so a caller may only complete keys under
+#: their own `uploads/{subject}/` prefix.
+_CALLER = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+_STAGING = f"uploads/{_CALLER}"
+
 
 def _sha(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def _make_victim_image(db_session, data: bytes, storage_key: str):
+    """Register a victim-owned image + private v1 directly in the DB."""
+    img = Image(sha256=_sha(data), bytes=len(data), mime="image/jpeg", storage_key=storage_key)
+    db_session.add(img)
+    db_session.flush()
+    v = ImageVersion(
+        image_id=img.id,
+        version_no=1,
+        transform_spec={},
+        mime="image/jpeg",
+        width=100,
+        height=100,
+        bytes=len(data),
+        storage_key=storage_key,
+        visibility="private",
+        age_rating=0,
+    )
+    db_session.add(v)
+    db_session.flush()
+    db_session.add(
+        UserImageLink(
+            user_id="99999999-8888-7777-6666-555555555555",
+            tenant_id="11111111-2222-3333-4444-555555555555",
+            image_id=img.id,
+            role="owner",
+        )
+    )
+    db_session.commit()
+    return img, v
 
 
 def _staging_s3(data: bytes) -> MagicMock:
@@ -70,7 +107,9 @@ class TestInitiateUpload:
         assert "fields" in data
         assert "staging_key" in data
         assert "bucket" in data
-        assert data["staging_key"].startswith("uploads/")
+        # The staging key is namespaced by the authenticated subject --
+        # complete_upload only accepts keys inside the caller's own namespace.
+        assert data["staging_key"].startswith(f"{_STAGING}/")
 
     def test_different_calls_get_different_staging_keys(self, client, auth_headers):
         payload = {"filename": "a.jpg", "mime": "image/jpeg", "size": 100}
@@ -86,7 +125,12 @@ class TestCompleteUpload:
         with _patch_upload_s3(_staging_s3(data)):
             r = client.post(
                 "/images/complete",
-                json={"sha256": sha, "key": "uploads/k", "mime": "image/jpeg", "size": len(data)},
+                json={
+                    "sha256": sha,
+                    "key": f"{_STAGING}/k",
+                    "mime": "image/jpeg",
+                    "size": len(data),
+                },
                 headers=auth_headers,
             )
         assert r.status_code == 200
@@ -99,7 +143,7 @@ class TestCompleteUpload:
     def test_idempotent_by_sha256(self, client, auth_headers):
         data = b"upload-bytes-b"
         sha = _sha(data)
-        payload = {"sha256": sha, "key": "uploads/k", "mime": "image/jpeg", "size": len(data)}
+        payload = {"sha256": sha, "key": f"{_STAGING}/k", "mime": "image/jpeg", "size": len(data)}
         with _patch_upload_s3(_staging_s3(data)):
             r1 = client.post("/images/complete", json=payload, headers=auth_headers)
             r2 = client.post("/images/complete", json=payload, headers=auth_headers)
@@ -114,7 +158,7 @@ class TestCompleteUpload:
                 "/images/complete",
                 json={
                     "sha256": _sha(data),
-                    "key": "uploads/k",
+                    "key": f"{_STAGING}/k",
                     "mime": "image/jpeg",
                     "size": len(data),
                 },
@@ -138,7 +182,7 @@ class TestCompleteUpload:
                 "/images/complete",
                 json={
                     "sha256": _sha(data),
-                    "key": "uploads/k",
+                    "key": f"uploads/{subject}/k",
                     "mime": "image/jpeg",
                     "size": len(data),
                 },
@@ -164,7 +208,7 @@ class TestCompleteUpload:
                 "/images/complete",
                 json={
                     "sha256": _sha(data),
-                    "key": "uploads/k",
+                    "key": "uploads/service:test-svc/k",
                     "mime": "image/jpeg",
                     "size": len(data),
                 },
@@ -184,42 +228,17 @@ class TestCompleteUploadProofOfPossession:
     arbitrary staging key and mint themselves an owner link (the async
     verify task only LOGS on mismatch -- it never revokes the link)."""
 
-    def _make_victim_image(self, db_session, data: bytes, storage_key: str):
-        """Register a victim-owned image + private v1 directly in the DB."""
-        img = Image(sha256=_sha(data), bytes=len(data), mime="image/jpeg", storage_key=storage_key)
-        db_session.add(img)
-        db_session.flush()
-        v = ImageVersion(
-            image_id=img.id,
-            version_no=1,
-            transform_spec={},
-            mime="image/jpeg",
-            width=100,
-            height=100,
-            bytes=len(data),
-            storage_key=storage_key,
-            visibility="private",
-            age_rating=0,
-        )
-        db_session.add(v)
-        db_session.flush()
-        db_session.add(
-            UserImageLink(
-                user_id="99999999-8888-7777-6666-555555555555",
-                tenant_id="11111111-2222-3333-4444-555555555555",
-                image_id=img.id,
-                role="owner",
-            )
-        )
-        db_session.commit()
-        return img, v
-
     def test_mismatched_sha_rejected_no_image_no_link(self, client, auth_headers, db_session):
         claimed_sha = "a" * 64  # does NOT match the staging bytes below
         with _patch_upload_s3(_staging_s3(b"not-those-bytes")):
             r = client.post(
                 "/images/complete",
-                json={"sha256": claimed_sha, "key": "uploads/x", "mime": "image/jpeg", "size": 15},
+                json={
+                    "sha256": claimed_sha,
+                    "key": f"{_STAGING}/x",
+                    "mime": "image/jpeg",
+                    "size": 15,
+                },
                 headers=auth_headers,
             )
         assert r.status_code == 400
@@ -236,7 +255,7 @@ class TestCompleteUploadProofOfPossession:
                 "/images/complete",
                 json={
                     "sha256": claimed_sha,
-                    "key": "uploads/never-uploaded",
+                    "key": f"{_STAGING}/never-uploaded",
                     "mime": "image/jpeg",
                     "size": 10,
                 },
@@ -251,16 +270,18 @@ class TestCompleteUploadProofOfPossession:
     ):
         """The keystone exploit: the victim's sha256 leaks as an ETag; the
         attacker replays it on /images/complete with a 1-byte staging object
-        and must NOT receive a co-owner link on the victim's image."""
+        in their OWN namespace and must NOT receive a co-owner link on the
+        victim's image (foreign-key variants are covered by
+        TestStagingKeyCallerBinding)."""
         victim_data = b"victim-original-bytes"
-        img, v = self._make_victim_image(db_session, victim_data, "k/victim")
+        img, v = _make_victim_image(db_session, victim_data, "k/victim")
 
         with _patch_upload_s3(_staging_s3(b"x")):  # 1 byte, wrong hash
             r = client.post(
                 "/images/complete",
                 json={
                     "sha256": img.sha256,
-                    "key": "uploads/attacker-staging",
+                    "key": f"{_STAGING}/attacker-staging",
                     "mime": "image/jpeg",
                     "size": 1,
                 },
@@ -295,7 +316,7 @@ class TestCompleteUploadProofOfPossession:
                 "/images/complete",
                 json={
                     "sha256": _sha(data),
-                    "key": "uploads/legit",
+                    "key": f"{_STAGING}/legit",
                     "mime": "image/jpeg",
                     "size": len(data),
                 },
@@ -320,7 +341,7 @@ class TestCompleteUploadProofOfPossession:
             width=100,
             height=100,
             bytes=len(data),
-            storage_key="uploads/legit",
+            storage_key=f"{_STAGING}/legit",
             visibility="private",
             age_rating=0,
         )
@@ -341,14 +362,14 @@ class TestCompleteUploadProofOfPossession:
         same content). A second caller gets the co-owner link ONLY because
         their own staging object hashes to the same sha256."""
         shared_data = b"identical-shared-content"
-        img, _v = self._make_victim_image(db_session, shared_data, "k/shared")
+        img, _v = _make_victim_image(db_session, shared_data, "k/shared")
 
         with _patch_upload_s3(_staging_s3(shared_data)):
             r = client.post(
                 "/images/complete",
                 json={
                     "sha256": img.sha256,
-                    "key": "uploads/second-copy",
+                    "key": f"{_STAGING}/second-copy",
                     "mime": "image/jpeg",
                     "size": len(shared_data),
                 },
@@ -362,6 +383,139 @@ class TestCompleteUploadProofOfPossession:
             .first()
         )
         assert link is not None
+
+
+class TestStagingKeyCallerBinding:
+    """The possession proof hashes whatever object payload.key points at,
+    using the server's OWN S3 credentials -- so on its own it only proves the
+    object exists, not that the caller ever held its bytes. Final keys are
+    predictable (content-addressed {sha[:2]}/{sha[2:4]}/{sha}.ext) and the
+    sha256 leaks publicly as the /serve ETag, so payload.key must first be
+    BOUND to the caller: only keys inside the caller's own
+    `uploads/{subject}/` staging namespace may be proven. Anything else is a
+    404 -- indistinguishable from a missing staging object -- and must never
+    even be fetched from S3."""
+
+    def test_forge_with_victims_final_key_is_404_and_never_hashed(
+        self, client, auth_headers, db_session
+    ):
+        """DEFINITIVE forge attempt: the attacker knows the victim's sha256
+        (public ETag) and therefore the victim's PREDICTABLE content-addressed
+        final key. Pointing payload.key at the victim's own stored object
+        would make the possession proof hash bytes the attacker never held.
+        Must 404 without touching S3, mint no link, and leave the victim's
+        image unreadable to the attacker."""
+        victim_data = b"victim-final-bytes"
+        sha = _sha(victim_data)
+        final_key = f"{sha[:2]}/{sha[2:4]}/{sha}.jpg"
+        img, v = _make_victim_image(db_session, victim_data, final_key)
+
+        # The mock WOULD serve the victim's bytes if asked -- the server's
+        # credentials can read every key. The fix must reject before asking.
+        mock_s3 = _staging_s3(victim_data)
+        with _patch_upload_s3(mock_s3):
+            r = client.post(
+                "/images/complete",
+                json={"sha256": sha, "key": final_key, "mime": "image/jpeg", "size": 18},
+                headers=auth_headers,
+            )
+        assert r.status_code == 404
+        mock_s3.get_object.assert_not_called()
+        attacker_links = (
+            db_session.query(UserImageLink).filter_by(image_id=img.id, user_id=_CALLER).all()
+        )
+        assert attacker_links == []
+
+        # Still locked out of the victim's image and its private version.
+        r = client.get(f"/images/{img.id}", headers=auth_headers)
+        assert r.status_code == 404
+        with patch(_SERVE_S3, return_value=_staging_s3(victim_data)):
+            r = client.get(f"/serve/{img.id}@{v.id}", headers=auth_headers, follow_redirects=False)
+        assert r.status_code == 404
+        assert victim_data not in r.content
+
+    def test_forge_with_other_users_staging_key_is_404(self, client, auth_headers, db_session):
+        """payload.key inside ANOTHER user's staging namespace: even with the
+        right sha256 for the bytes sitting there, it is not the caller's
+        namespace -- 404, never fetched, no link."""
+        victim_data = b"victim-staged-bytes"
+        sha = _sha(victim_data)
+        img, _v = _make_victim_image(db_session, victim_data, "k/victim-staged")
+
+        mock_s3 = _staging_s3(victim_data)
+        with _patch_upload_s3(mock_s3):
+            r = client.post(
+                "/images/complete",
+                json={
+                    "sha256": sha,
+                    "key": "uploads/99999999-8888-7777-6666-555555555555/orig.jpg",
+                    "mime": "image/jpeg",
+                    "size": 19,
+                },
+                headers=auth_headers,
+            )
+        assert r.status_code == 404
+        mock_s3.get_object.assert_not_called()
+        attacker_links = (
+            db_session.query(UserImageLink).filter_by(image_id=img.id, user_id=_CALLER).all()
+        )
+        assert attacker_links == []
+
+    def test_traversal_segments_in_own_namespace_rejected(self, client, auth_headers, db_session):
+        """A `..`-segment key nominally inside the caller's namespace could be
+        folded onto a foreign key by any path-normalizing gateway in front of
+        the object store. Reject it outright -- 404, never fetched."""
+        victim_data = b"victim-traversal-bytes"
+        sha = _sha(victim_data)
+        final_key = f"{sha[:2]}/{sha[2:4]}/{sha}.jpg"
+        _make_victim_image(db_session, victim_data, final_key)
+
+        mock_s3 = _staging_s3(victim_data)
+        with _patch_upload_s3(mock_s3):
+            r = client.post(
+                "/images/complete",
+                json={
+                    "sha256": sha,
+                    "key": f"{_STAGING}/../../{final_key}",
+                    "mime": "image/jpeg",
+                    "size": 22,
+                },
+                headers=auth_headers,
+            )
+        assert r.status_code == 404
+        mock_s3.get_object.assert_not_called()
+
+    def test_initiate_issued_staging_key_completes_for_caller(
+        self, client, auth_headers, db_session
+    ):
+        """Round trip: the exact staging key issued by initiate-upload passes
+        complete's namespace binding for the same caller -- image registered,
+        owner link minted."""
+        data = b"roundtrip-bytes"
+        r = client.post(
+            "/images/initiate-upload",
+            json={"filename": "photo.jpg", "mime": "image/jpeg", "size": len(data)},
+            headers=auth_headers,
+        )
+        assert r.status_code == 200
+        staging_key = r.json()["staging_key"]
+
+        with _patch_upload_s3(_staging_s3(data)):
+            r = client.post(
+                "/images/complete",
+                json={
+                    "sha256": _sha(data),
+                    "key": staging_key,
+                    "mime": "image/jpeg",
+                    "size": len(data),
+                },
+                headers=auth_headers,
+            )
+        assert r.status_code == 200
+        image_id = r.json()["image_id"]
+        link = db_session.query(UserImageLink).filter_by(image_id=image_id, user_id=_CALLER).first()
+        assert link is not None
+        assert link.role == "owner"
 
 
 class TestGetImage:

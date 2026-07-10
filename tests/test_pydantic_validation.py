@@ -93,8 +93,9 @@ class TestCompleteUploadValidation:
         assert r.status_code == 422
 
     def test_valid_complete_response_shape(self, client, auth_headers):
-        # complete_upload now proves possession by hashing the staging
-        # object, so the mock bytes must hash to the submitted sha256.
+        # complete_upload proves possession by hashing the staging object, so
+        # the mock bytes must hash to the submitted sha256 -- and the key must
+        # sit inside the caller's own staging namespace.
         data_bytes = b"shape-test-bytes"
         mock_s3 = MagicMock()
         mock_s3.get_object.return_value = {"Body": io.BytesIO(data_bytes)}
@@ -103,7 +104,7 @@ class TestCompleteUploadValidation:
                 "/images/complete",
                 json={
                     "sha256": hashlib.sha256(data_bytes).hexdigest(),
-                    "key": "uploads/k",
+                    "key": "uploads/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee/k",
                     "mime": "image/jpeg",
                     "size": len(data_bytes),
                 },
