@@ -3,27 +3,43 @@
 TDD: These tests should FAIL initially because auth enforcement is missing on
 most routes. After adding get_auth_ctx checks, they should all pass.
 """
+
 from __future__ import annotations
 
 # ---------------------------------------------------------------------------
 # Image routes
 # ---------------------------------------------------------------------------
 
+
 class TestImageRoutesRequireAuth:
     def test_initiate_upload_no_auth(self, client):
-        r = client.post("/images/initiate-upload", json={"filename": "a.jpg", "mime": "image/jpeg", "size": 1024})
+        r = client.post(
+            "/images/initiate-upload",
+            json={"filename": "a.jpg", "mime": "image/jpeg", "size": 1024},
+        )
         assert r.status_code == 401
 
     def test_initiate_upload_with_auth(self, client, auth_headers):
-        r = client.post("/images/initiate-upload", json={"filename": "a.jpg", "mime": "image/jpeg", "size": 1024}, headers=auth_headers)
+        r = client.post(
+            "/images/initiate-upload",
+            json={"filename": "a.jpg", "mime": "image/jpeg", "size": 1024},
+            headers=auth_headers,
+        )
         assert r.status_code != 401
 
     def test_complete_upload_no_auth(self, client):
-        r = client.post("/images/complete", json={"sha256": "a" * 64, "key": "uploads/k", "mime": "image/jpeg", "size": 1024})
+        r = client.post(
+            "/images/complete",
+            json={"sha256": "a" * 64, "key": "uploads/k", "mime": "image/jpeg", "size": 1024},
+        )
         assert r.status_code == 401
 
     def test_complete_upload_with_auth(self, client, auth_headers):
-        r = client.post("/images/complete", json={"sha256": "a" * 64, "key": "uploads/k", "mime": "image/jpeg", "size": 1024}, headers=auth_headers)
+        r = client.post(
+            "/images/complete",
+            json={"sha256": "a" * 64, "key": "uploads/k", "mime": "image/jpeg", "size": 1024},
+            headers=auth_headers,
+        )
         assert r.status_code != 401
 
     def test_get_image_no_auth(self, client):
@@ -57,7 +73,9 @@ class TestImageRoutesRequireAuth:
         assert r.status_code == 401
 
     def test_set_visibility_with_auth(self, client, auth_headers):
-        r = client.post("/images/1/versions/1/visibility", json={"visibility": "public"}, headers=auth_headers)
+        r = client.post(
+            "/images/1/versions/1/visibility", json={"visibility": "public"}, headers=auth_headers
+        )
         assert r.status_code != 401
 
     def test_expose_safe_alt_no_auth(self, client):
@@ -72,6 +90,7 @@ class TestImageRoutesRequireAuth:
 # ---------------------------------------------------------------------------
 # Album routes
 # ---------------------------------------------------------------------------
+
 
 class TestAlbumRoutesRequireAuth:
     def test_create_album_no_auth(self, client):
@@ -135,13 +154,16 @@ class TestAlbumRoutesRequireAuth:
 # Tag routes
 # ---------------------------------------------------------------------------
 
+
 class TestTagRoutesRequireAuth:
     def test_create_tag_no_auth(self, client):
         r = client.post("/tags", json={"name": "landscape", "scope": "global"})
         assert r.status_code == 401
 
     def test_create_tag_with_auth(self, client, auth_headers):
-        r = client.post("/tags", json={"name": "landscape", "scope": "global"}, headers=auth_headers)
+        r = client.post(
+            "/tags", json={"name": "landscape", "scope": "global"}, headers=auth_headers
+        )
         assert r.status_code != 401
 
     def test_tag_image_no_auth(self, client):
@@ -165,6 +187,7 @@ class TestTagRoutesRequireAuth:
 # Search routes
 # ---------------------------------------------------------------------------
 
+
 class TestSearchRoutesRequireAuth:
     def test_search_images_no_auth(self, client):
         r = client.get("/search/images")
@@ -187,13 +210,18 @@ class TestSearchRoutesRequireAuth:
 # External routes
 # ---------------------------------------------------------------------------
 
+
 class TestExternalRoutesRequireAuth:
     def test_create_external_ref_no_auth(self, client):
         r = client.post("/external/refs", json={"ref_type": "foo", "ref_id": "bar", "image_id": 1})
         assert r.status_code == 401
 
     def test_create_external_ref_with_auth(self, client, auth_headers):
-        r = client.post("/external/refs", json={"ref_type": "foo", "ref_id": "bar", "image_id": 1}, headers=auth_headers)
+        r = client.post(
+            "/external/refs",
+            json={"ref_type": "foo", "ref_id": "bar", "image_id": 1},
+            headers=auth_headers,
+        )
         assert r.status_code != 401
 
     def test_by_external_ref_no_auth(self, client):
@@ -201,7 +229,9 @@ class TestExternalRoutesRequireAuth:
         assert r.status_code == 401
 
     def test_by_external_ref_with_auth(self, client, auth_headers):
-        r = client.get("/external/assets/by-external-ref?ref_type=foo&ref_id=bar", headers=auth_headers)
+        r = client.get(
+            "/external/assets/by-external-ref?ref_type=foo&ref_id=bar", headers=auth_headers
+        )
         # 404 is fine
         assert r.status_code != 401
 
@@ -209,6 +239,7 @@ class TestExternalRoutesRequireAuth:
 # ---------------------------------------------------------------------------
 # Routes that SHOULD remain public
 # ---------------------------------------------------------------------------
+
 
 class TestPublicRoutes:
     def test_healthz_no_auth(self, client):

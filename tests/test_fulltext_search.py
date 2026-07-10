@@ -5,7 +5,7 @@ SQLite tests exercise the ILIKE fallback; tsvector is PostgreSQL-only.
 """
 
 from app.models import Album, Image
-from app.search import is_postgres, build_text_filter
+from app.search import build_text_filter, is_postgres
 
 
 class TestSearchHelper:
@@ -32,7 +32,9 @@ class TestImageFullTextSearch:
         assert img.id in ids
 
     def test_search_case_insensitive(self, client, auth_headers, db_session):
-        img = Image(sha256="ft2" * 22, bytes=100, mime="image/jpeg", storage_key="photos/SUNSET.jpg")
+        img = Image(
+            sha256="ft2" * 22, bytes=100, mime="image/jpeg", storage_key="photos/SUNSET.jpg"
+        )
         db_session.add(img)
         db_session.commit()
 

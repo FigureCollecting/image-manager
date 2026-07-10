@@ -1,5 +1,4 @@
 from fastapi import APIRouter, Depends, HTTPException, Response
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
@@ -12,7 +11,13 @@ router = APIRouter(tags=["serve"])
 
 
 @router.get("/serve/{image_id}@{version_id}")
-def serve_version(image_id: int, version_id: int, mode: str | None = None, db: Session = Depends(get_db), ctx: AuthCtx | None = Depends(get_auth_ctx)) -> Response:
+def serve_version(
+    image_id: int,
+    version_id: int,
+    mode: str | None = None,
+    db: Session = Depends(get_db),
+    ctx: AuthCtx | None = Depends(get_auth_ctx),
+) -> Response:
     img = db.get(Image, image_id)
     v = db.get(ImageVersion, version_id)
     if not img or not v or v.image_id != img.id:
@@ -55,4 +60,3 @@ def public_serve(image_id: int, version_id: int, db: Session = Depends(get_db)) 
     resp.headers["Cache-Control"] = "public, max-age=600"
     resp.headers["ETag"] = img.sha256
     return resp
-

@@ -75,8 +75,16 @@ class TestGetImage:
         db_session.add(img)
         db_session.flush()
         v = ImageVersion(
-            image_id=img.id, version_no=1, transform_spec={}, mime="image/png",
-            width=100, height=100, bytes=100, storage_key="k/1", visibility="private", age_rating=0,
+            image_id=img.id,
+            version_no=1,
+            transform_spec={},
+            mime="image/png",
+            width=100,
+            height=100,
+            bytes=100,
+            storage_key="k/1",
+            visibility="private",
+            age_rating=0,
         )
         db_session.add(v)
         db_session.commit()

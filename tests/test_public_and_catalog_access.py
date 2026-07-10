@@ -9,8 +9,16 @@ class TestServeVersion:
         db_session.add(img)
         db_session.flush()
         v = ImageVersion(
-            image_id=img.id, version_no=1, transform_spec={}, mime="image/jpeg",
-            width=100, height=100, bytes=100, storage_key="k/s1", visibility="private", age_rating=0,
+            image_id=img.id,
+            version_no=1,
+            transform_spec={},
+            mime="image/jpeg",
+            width=100,
+            height=100,
+            bytes=100,
+            storage_key="k/s1",
+            visibility="private",
+            age_rating=0,
         )
         db_session.add(v)
         db_session.commit()
@@ -30,8 +38,16 @@ class TestServeVersion:
         db_session.add_all([img1, img2])
         db_session.flush()
         v = ImageVersion(
-            image_id=img1.id, version_no=1, transform_spec={}, mime="image/jpeg",
-            width=100, height=100, bytes=100, storage_key="k/s2", visibility="private", age_rating=0,
+            image_id=img1.id,
+            version_no=1,
+            transform_spec={},
+            mime="image/jpeg",
+            width=100,
+            height=100,
+            bytes=100,
+            storage_key="k/s2",
+            visibility="private",
+            age_rating=0,
         )
         db_session.add(v)
         db_session.commit()
@@ -47,8 +63,16 @@ class TestPublicServe:
         db_session.add(img)
         db_session.flush()
         v = ImageVersion(
-            image_id=img.id, version_no=1, transform_spec={}, mime="image/jpeg",
-            width=100, height=100, bytes=100, storage_key="k/p1", visibility="public", age_rating=0,
+            image_id=img.id,
+            version_no=1,
+            transform_spec={},
+            mime="image/jpeg",
+            width=100,
+            height=100,
+            bytes=100,
+            storage_key="k/p1",
+            visibility="public",
+            age_rating=0,
         )
         db_session.add(v)
         db_session.commit()
@@ -64,8 +88,16 @@ class TestPublicServe:
         db_session.add(img)
         db_session.flush()
         v = ImageVersion(
-            image_id=img.id, version_no=1, transform_spec={}, mime="image/jpeg",
-            width=100, height=100, bytes=100, storage_key="k/p2", visibility="private", age_rating=0,
+            image_id=img.id,
+            version_no=1,
+            transform_spec={},
+            mime="image/jpeg",
+            width=100,
+            height=100,
+            bytes=100,
+            storage_key="k/p2",
+            visibility="private",
+            age_rating=0,
         )
         db_session.add(v)
         db_session.commit()
@@ -80,8 +112,16 @@ class TestVisibilityEnforcement:
         db_session.add(img)
         db_session.flush()
         v = ImageVersion(
-            image_id=img.id, version_no=1, transform_spec={}, mime="image/jpeg",
-            width=100, height=100, bytes=100, storage_key="k/v1", visibility="private", age_rating=0,
+            image_id=img.id,
+            version_no=1,
+            transform_spec={},
+            mime="image/jpeg",
+            width=100,
+            height=100,
+            bytes=100,
+            storage_key="k/v1",
+            visibility="private",
+            age_rating=0,
         )
         db_session.add(v)
         db_session.commit()
