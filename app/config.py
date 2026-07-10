@@ -52,9 +52,13 @@ class Settings(BaseSettings):
     db_max_overflow: int = 20
     db_pool_recycle: int = 1800  # 30 minutes
 
-    # Matting pipeline: "stub" (default, no model) or "birefnet" (deploy-time
-    # only -- see app.workers.matting.BiRefNetMattingBackend).
+    # Matting pipeline: "stub" (default, no model) or "birefnet" (real
+    # subject segmentation -- see app.workers.matting.BiRefNetMattingBackend).
     matting_backend: str = "stub"
+    # Path to the BiRefNet ONNX weights baked into the worker Docker image
+    # (see Dockerfile.worker). Only consulted when matting_backend is
+    # "birefnet"; unset in dev/tests, where the stub backend is used.
+    matting_model_path: str | None = None
 
 
 @lru_cache(maxsize=1)
