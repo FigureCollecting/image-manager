@@ -29,7 +29,9 @@ class TestDeleteImage:
         r = client.get(f"/images/{img.id}", headers=auth_headers)
         assert r.status_code == 404
 
-    def test_deleted_image_not_in_search(self, client, auth_headers, db_session, link_image_to_user):
+    def test_deleted_image_not_in_search(
+        self, client, auth_headers, db_session, link_image_to_user
+    ):
         img = Image(sha256="del3" * 16, bytes=100, mime="image/jpeg", storage_key="k/del3")
         db_session.add(img)
         db_session.flush()
@@ -119,7 +121,9 @@ class TestDeleteVersion:
         assert r.status_code == 200
         assert r.json()["ok"] is True
 
-    def test_deleted_version_not_in_image_detail(self, client, auth_headers, db_session, link_image_to_user):
+    def test_deleted_version_not_in_image_detail(
+        self, client, auth_headers, db_session, link_image_to_user
+    ):
         img = Image(sha256="dv2" * 22, bytes=100, mime="image/jpeg", storage_key="k/dv2")
         db_session.add(img)
         db_session.flush()

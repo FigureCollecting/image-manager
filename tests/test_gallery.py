@@ -10,7 +10,8 @@ import io
 from unittest.mock import MagicMock, patch
 
 import pytest
-from app.models import Image as ImageModel, ImageVersion
+from app.models import Image as ImageModel
+from app.models import ImageVersion
 from fastapi.testclient import TestClient
 from PIL import Image
 from sqlalchemy.orm import Session
@@ -74,7 +75,7 @@ class TestGalleryIngest:
         db_session.add(gallery)
         db_session.flush()
 
-        with patch("app.routes.gallery_routes.ingest_gallery_images.delay") as mock_delay:
+        with patch("app.routes.gallery_routes.ingest_gallery_images.delay"):
             resp = client.post(
                 "/galleries/ingest",
                 json={
@@ -178,7 +179,7 @@ class TestGalleryGet:
             image_id=img.id,
             position=0,
             source="mfc",
-            deleted_at=dt.datetime.now(dt.timezone.utc),
+            deleted_at=dt.datetime.now(dt.UTC),
         )
         db_session.add(g)
         db_session.flush()
@@ -449,17 +450,12 @@ class TestIngestGalleryTask:
         from contextlib import contextmanager
         from unittest.mock import patch
 
-        from PIL import Image
-
         from app.workers.tasks import ingest_gallery_images
+        from PIL import Image
 
         img_data = io.BytesIO()
         Image.new("RGB", (8, 8), (255, 0, 0)).save(img_data, format="PNG")
         img_bytes = img_data.getvalue()
-
-        from app.hashing import sha256_bytes
-
-        sha = sha256_bytes(img_bytes)
 
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -508,9 +504,8 @@ class TestIngestGalleryTask:
         import io
         from contextlib import contextmanager
 
-        from PIL import Image
-
         from app.workers.tasks import ingest_gallery_images
+        from PIL import Image
 
         img_data = io.BytesIO()
         Image.new("RGB", (8, 8), (0, 255, 0)).save(img_data, format="PNG")

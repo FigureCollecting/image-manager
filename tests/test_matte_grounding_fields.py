@@ -15,10 +15,8 @@ from pathlib import Path
 
 from alembic.operations import Operations
 from alembic.runtime.migration import MigrationContext
-from sqlalchemy import Boolean, Float, String
-from sqlalchemy import create_engine, inspect, text
-
 from app.models import ImageVersion
+from sqlalchemy import Boolean, Float, String, create_engine, inspect, text
 
 NEW_COLUMNS = {
     "matted",
@@ -92,7 +90,7 @@ def test_migration_upgrade_and_downgrade_are_reversible():
         with Operations.context(ctx):
             migration.upgrade()
         cols = {c["name"] for c in inspect(engine).get_columns("image_versions")}
-        assert NEW_COLUMNS <= cols
+        assert cols >= NEW_COLUMNS
 
     with engine.connect() as conn:
         ctx = MigrationContext.configure(conn)

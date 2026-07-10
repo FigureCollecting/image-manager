@@ -49,7 +49,10 @@ def ingest_gallery(
     if new_images:
         ingest_gallery_images.delay(
             figure_id=figure_id,
-            images=[{"url": img.url, "position": img.position, "caption": img.caption} for img in new_images],
+            images=[
+                {"url": img.url, "position": img.position, "caption": img.caption}
+                for img in new_images
+            ],
         )
 
     return IngestGalleryResponse(
@@ -159,7 +162,7 @@ def delete_gallery_image(
     )
     if not entry:
         raise HTTPException(status_code=404, detail="not found")
-    entry.deleted_at = dt.datetime.now(dt.timezone.utc)
+    entry.deleted_at = dt.datetime.now(dt.UTC)
     db.commit()
     return OkResponse(ok=True)
 

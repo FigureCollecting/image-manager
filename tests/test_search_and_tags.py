@@ -117,7 +117,9 @@ class TestSearchImages:
         results = r.json()["results"]
         assert any(row["id"] == img.id for row in results)
 
-    def test_search_returns_all_when_no_filter(self, client, auth_headers, db_session, link_image_to_user):
+    def test_search_returns_all_when_no_filter(
+        self, client, auth_headers, db_session, link_image_to_user
+    ):
         img = Image(sha256="ff" * 32, bytes=50, mime="image/jpeg", storage_key="k/ff")
         db_session.add(img)
         db_session.flush()

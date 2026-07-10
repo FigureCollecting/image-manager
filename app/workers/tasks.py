@@ -4,7 +4,7 @@ import io
 import logging
 import mimetypes
 import uuid
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import httpx
 import numpy as np
@@ -23,6 +23,8 @@ from .watermark import apply_watermark, strip_exif
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
+
+    from ..config import Settings
 
 logger = logging.getLogger(__name__)
 
@@ -119,7 +121,7 @@ def enqueue_verify(*, image_id: int, bucket: str, key: str, expected_sha256: str
 _ALPHA_CAPABLE_FORMATS = ("PNG", "WEBP")
 
 
-def _apply_transforms(data: bytes, spec: dict) -> tuple[bytes, str, int, int]:
+def _apply_transforms(data: bytes, spec: dict[str, Any]) -> tuple[bytes, str, int, int]:
     matte_requested = bool(spec.get("matte"))
     img = Image.open(io.BytesIO(data))
     if matte_requested:
@@ -320,7 +322,7 @@ def enqueue_album_cover(album_id: int) -> str:
 
 
 @celery_app.task(name="ingest_gallery_images")
-def ingest_gallery_images(*, figure_id: str, images: list[dict]) -> None:
+def ingest_gallery_images(*, figure_id: str, images: list[dict[str, Any]]) -> None:
     """Download gallery images, deduplicate by SHA256, create FigureGallery records."""
     from ..config import get_settings
 
@@ -339,7 +341,9 @@ def ingest_gallery_images(*, figure_id: str, images: list[dict]) -> None:
                 resp = httpx.get(url, timeout=30)
                 resp.raise_for_status()
             except Exception:
-                logger.warning("gallery_download_failed", extra={"url": url, "figure_id": figure_id})
+                logger.warning(
+                    "gallery_download_failed", extra={"url": url, "figure_id": figure_id}
+                )
                 continue
 
             data = resp.content
@@ -429,8 +433,8 @@ def ingest_gallery_images(*, figure_id: str, images: list[dict]) -> None:
 def _create_matted_derivative(
     *,
     db: Session,
-    s3,
-    settings,
+    s3: Any,
+    settings: Settings,
     image_id: int,
     source_version_no: int,
     source_data: bytes,
@@ -451,7 +455,9 @@ def _create_matted_derivative(
     the whole ingest run.
     """
     try:
-        matted_bytes, _mime, _w, _h = _apply_transforms(source_data, {"matte": True, "format": "PNG"})
+        matted_bytes, _mime, _w, _h = _apply_transforms(
+            source_data, {"matte": True, "format": "PNG"}
+        )
         matted_img = Image.open(io.BytesIO(matted_bytes)).convert("RGBA")
         matted_img = strip_exif(matted_img)
 

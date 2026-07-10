@@ -37,15 +37,12 @@ def _check_image_ownership(db: Session, image_id: int, ctx: AuthCtx) -> None:
     """Verify that a non-service caller has a UserImageLink for this image."""
     if ctx.is_service:
         return
-    link = (
-        db.execute(
-            select(UserImageLink).where(
-                UserImageLink.image_id == image_id,
-                UserImageLink.user_id == ctx.subject,
-            )
+    link = db.execute(
+        select(UserImageLink).where(
+            UserImageLink.image_id == image_id,
+            UserImageLink.user_id == ctx.subject,
         )
-        .scalar_one_or_none()
-    )
+    ).scalar_one_or_none()
     if not link:
         raise HTTPException(status_code=404, detail="not found")
 
@@ -316,7 +313,7 @@ def delete_image(
     if not img or img.deleted_at is not None:
         raise HTTPException(status_code=404, detail="not found")
     _check_image_ownership(db, image_id, ctx)
-    img.deleted_at = dt.datetime.now(dt.timezone.utc)
+    img.deleted_at = dt.datetime.now(dt.UTC)
     db.commit()
     return OkResponse(ok=True)
 

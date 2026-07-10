@@ -14,16 +14,14 @@ from .config import Settings, get_settings
 from .db import get_db
 from .logging import setup_logging
 from .rate_limit import RateLimitMiddleware
-from .routes.auth_routes import router as auth_router
-from .routes.image_routes import router as image_router
-from .routes.serve_routes import router as serve_router
-from .routes.external_routes import router as external_router
 from .routes.album_routes import router as album_router
 from .routes.auth_routes import router as auth_router
 from .routes.external_routes import router as external_router
+from .routes.gallery_routes import router as gallery_router
 from .routes.image_routes import router as image_router
 from .routes.search_routes import router as search_router
-from .routes.gallery_routes import router as gallery_router
+from .routes.serve_routes import router as serve_router
+from .routes.tag_routes import router as tag_router
 
 
 @asynccontextmanager

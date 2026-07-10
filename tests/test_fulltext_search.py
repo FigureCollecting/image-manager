@@ -5,7 +5,7 @@ SQLite tests exercise the ILIKE fallback; tsvector is PostgreSQL-only.
 """
 
 from app.models import Album, Image, UserImageLink
-from app.search import is_postgres, build_text_filter
+from app.search import build_text_filter, is_postgres
 
 _USER_ID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
 _TENANT_ID = "11111111-2222-3333-4444-555555555555"
@@ -26,7 +26,9 @@ class TestImageFullTextSearch:
     def _add_linked(self, db_session, img):
         db_session.add(img)
         db_session.flush()
-        db_session.add(UserImageLink(user_id=_USER_ID, tenant_id=_TENANT_ID, image_id=img.id, role="owner"))
+        db_session.add(
+            UserImageLink(user_id=_USER_ID, tenant_id=_TENANT_ID, image_id=img.id, role="owner")
+        )
 
     def test_search_partial_match(self, client, auth_headers, db_session):
         """ILIKE fallback should match substrings."""
@@ -40,7 +42,9 @@ class TestImageFullTextSearch:
         assert img.id in ids
 
     def test_search_case_insensitive(self, client, auth_headers, db_session):
-        img = Image(sha256="ft2" * 22, bytes=100, mime="image/jpeg", storage_key="photos/SUNSET.jpg")
+        img = Image(
+            sha256="ft2" * 22, bytes=100, mime="image/jpeg", storage_key="photos/SUNSET.jpg"
+        )
         self._add_linked(db_session, img)
         db_session.commit()
 

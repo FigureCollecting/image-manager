@@ -2,10 +2,9 @@
 
 from unittest.mock import MagicMock
 
-from sqlalchemy.exc import OperationalError
-
 from app.db import get_db
 from app.main import app
+from sqlalchemy.exc import OperationalError
 
 
 class TestHealthEndpoint:
@@ -25,9 +24,7 @@ class TestHealthEndpoint:
     def test_healthz_db_failure_returns_degraded(self):
         """When DB is unreachable, healthz should return 503 with db error."""
         mock_session = MagicMock()
-        mock_session.execute.side_effect = OperationalError(
-            "connection refused", None, None
-        )
+        mock_session.execute.side_effect = OperationalError("connection refused", None, None)
 
         def _broken_db():
             yield mock_session

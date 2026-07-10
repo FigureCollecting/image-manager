@@ -11,17 +11,14 @@ import io
 from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
-import pytest
-from PIL import Image
-from sqlalchemy import select
-from sqlalchemy.orm import Session
-
 from app.models import (
     Album,
     AlbumItem,
-    Image as ImageModel,
     ImageVersion,
     UserImageLink,
+)
+from app.models import (
+    Image as ImageModel,
 )
 from app.workers.tasks import (
     _apply_transforms,
@@ -31,6 +28,9 @@ from app.workers.tasks import (
     generate_album_cover,
     verify_and_register_object,
 )
+from PIL import Image
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 
 def _make_image_bytes(width: int = 8, height: int = 8, fmt: str = "PNG") -> bytes:
@@ -212,9 +212,7 @@ class TestVerifyAndRegisterObject:
             verify_and_register_object(img.id, "images", "staging/test.png", sha)
 
         versions = (
-            db_session.execute(
-                select(ImageVersion).where(ImageVersion.image_id == img.id)
-            )
+            db_session.execute(select(ImageVersion).where(ImageVersion.image_id == img.id))
             .scalars()
             .all()
         )
@@ -469,9 +467,7 @@ class TestGenerateAlbumCover:
             )
             db_session.add(v)
             db_session.flush()
-            item = AlbumItem(
-                album_id=album.id, position=i, image_id=img.id, version_id=v.id
-            )
+            item = AlbumItem(album_id=album.id, position=i, image_id=img.id, version_id=v.id)
             db_session.add(item)
 
         db_session.flush()

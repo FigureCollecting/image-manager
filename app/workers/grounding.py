@@ -52,7 +52,7 @@ def compute_bottom_margin_frac(rgba: np.ndarray) -> float:
         return 0.0
 
     last_opaque_y = int(opaque_rows.max())
-    return (height - 1 - last_opaque_y) / height
+    return float((height - 1 - last_opaque_y) / height)
 
 
 def compute_contact_band(rgba: np.ndarray) -> tuple[float, float] | None:

@@ -6,9 +6,6 @@ issue_dev_token service path with DB lookup, missing user_id error.
 
 from __future__ import annotations
 
-import datetime as dt
-import time
-
 import pytest
 from app.auth import create_token, decode_token, issue_dev_token
 from app.config import Settings
@@ -32,7 +29,9 @@ class TestCreateToken:
     def test_includes_audience_when_provided(self, settings: Settings) -> None:
         token = create_token(settings, subject="user1", audience="service:backend")
         payload = jwt.decode(
-            token, settings.jwt_secret, algorithms=[settings.jwt_algorithm],
+            token,
+            settings.jwt_secret,
+            algorithms=[settings.jwt_algorithm],
             audience="service:backend",
         )
         assert payload["aud"] == "service:backend"
@@ -110,7 +109,9 @@ class TestIssueDevToken:
         token = issue_dev_token(db_session, settings, aud="service:unknown")
         # Decode directly with audience since decode_token doesn't pass audience
         payload = jwt.decode(
-            token, settings.jwt_secret, algorithms=[settings.jwt_algorithm],
+            token,
+            settings.jwt_secret,
+            algorithms=[settings.jwt_algorithm],
             audience="service:unknown",
         )
         assert payload["sub"] == "service:unknown"
@@ -124,7 +125,9 @@ class TestIssueDevToken:
 
         token = issue_dev_token(db_session, settings, aud="service:backend")
         payload = jwt.decode(
-            token, settings.jwt_secret, algorithms=[settings.jwt_algorithm],
+            token,
+            settings.jwt_secret,
+            algorithms=[settings.jwt_algorithm],
             audience="service:backend",
         )
         assert payload["sub"] == "service:backend"
@@ -138,7 +141,9 @@ class TestIssueDevToken:
 
         token = issue_dev_token(db_session, settings, aud="service:empty-svc")
         payload = jwt.decode(
-            token, settings.jwt_secret, algorithms=[settings.jwt_algorithm],
+            token,
+            settings.jwt_secret,
+            algorithms=[settings.jwt_algorithm],
             audience="service:empty-svc",
         )
         assert payload.get("scopes", []) == []

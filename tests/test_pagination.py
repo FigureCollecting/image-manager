@@ -8,11 +8,14 @@ class TestImageSearchPagination:
         img = Image(sha256=sha256, bytes=100, mime="image/jpeg", storage_key=storage_key)
         db_session.add(img)
         db_session.flush()
-        db_session.add(UserImageLink(
-            user_id="aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
-            tenant_id="11111111-2222-3333-4444-555555555555",
-            image_id=img.id, role="owner",
-        ))
+        db_session.add(
+            UserImageLink(
+                user_id="aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+                tenant_id="11111111-2222-3333-4444-555555555555",
+                image_id=img.id,
+                role="owner",
+            )
+        )
         return img
 
     def test_default_limit(self, client, auth_headers, db_session):

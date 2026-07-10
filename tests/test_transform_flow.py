@@ -34,7 +34,9 @@ class TestCreateVersion:
         assert data["version_no"] == 2
         assert "storage_key" in data
 
-    def test_create_version_explicit_base(self, client, auth_headers, db_session, link_image_to_user):
+    def test_create_version_explicit_base(
+        self, client, auth_headers, db_session, link_image_to_user
+    ):
         img = Image(sha256="a2" * 32, bytes=100, mime="image/jpeg", storage_key="k/a2")
         db_session.add(img)
         db_session.flush()
@@ -107,7 +109,9 @@ class TestSetVisibility:
         db_session.refresh(v)
         assert v.visibility == "public"
 
-    def test_set_visibility_404_wrong_image(self, client, auth_headers, db_session, link_image_to_user):
+    def test_set_visibility_404_wrong_image(
+        self, client, auth_headers, db_session, link_image_to_user
+    ):
         img = Image(sha256="b2" * 32, bytes=100, mime="image/jpeg", storage_key="k/b2")
         db_session.add(img)
         db_session.flush()

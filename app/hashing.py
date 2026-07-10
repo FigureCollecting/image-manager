@@ -52,4 +52,3 @@ def detect_mime(data: bytes) -> str:
     img = Image.open(io.BytesIO(data))
     fmt = (img.format or "").upper()
     return _FORMAT_TO_MIME.get(fmt, "application/octet-stream")
-

@@ -37,7 +37,9 @@ def refresh_token(
 ) -> RefreshTokenResponse:
     claims = auth.decode_token(settings, payload.refresh_token)
     if not claims or claims.get("type") != "refresh":
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid or expired refresh token")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid or expired refresh token"
+        )
 
     subject = claims.get("sub", "")
     tenant_id = claims.get("ten")
@@ -45,4 +47,3 @@ def refresh_token(
     access = auth.create_token(settings, subject=subject, tenant_id=tenant_id)
     refresh = auth.create_refresh_token(settings, subject=subject, tenant_id=tenant_id)
     return RefreshTokenResponse(access_token=access, refresh_token=refresh)
-

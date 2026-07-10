@@ -38,7 +38,11 @@ class Settings(BaseSettings):
     s3_presign_expiry_get: int = 10 * 60
 
     # CORS
-    cors_origins: list[str] = ["http://localhost:3000", "http://localhost:5051", "https://figurecollecting.com"]
+    cors_origins: list[str] = [
+        "http://localhost:3000",
+        "http://localhost:5051",
+        "https://figurecollecting.com",
+    ]
 
     # Rate limiting
     rate_limit_per_minute: int = 120

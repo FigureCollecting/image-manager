@@ -116,7 +116,11 @@ def get_album(
     ctx: AuthCtx = Depends(require_auth_ctx),  # noqa: B008
 ) -> AlbumDetailResponse:
     album = db.get(Album, album_id)
-    if not album or album.deleted_at is not None or (album.tenant_id and album.tenant_id != ctx.tenant_id):
+    if (
+        not album
+        or album.deleted_at is not None
+        or (album.tenant_id and album.tenant_id != ctx.tenant_id)
+    ):
         raise HTTPException(status_code=404, detail="not found")
     items = (
         db.execute(
@@ -183,7 +187,11 @@ def delete_album(
     ctx: AuthCtx = Depends(require_auth_ctx),  # noqa: B008
 ) -> OkResponse:
     album = db.get(Album, album_id)
-    if not album or album.deleted_at is not None or (album.tenant_id and album.tenant_id != ctx.tenant_id):
+    if (
+        not album
+        or album.deleted_at is not None
+        or (album.tenant_id and album.tenant_id != ctx.tenant_id)
+    ):
         raise HTTPException(status_code=404, detail="not found")
     album.deleted_at = dt.datetime.now(dt.UTC)
     db.commit()

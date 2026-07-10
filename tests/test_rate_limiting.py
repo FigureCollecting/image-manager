@@ -46,6 +46,7 @@ class TestRateLimitMiddleware:
             )
             # Clear the rate limiter state
             from app.rate_limit import _buckets
+
             _buckets.clear()
 
             for _ in range(3):
@@ -68,6 +69,7 @@ class TestRateLimitMiddleware:
                 rate_limit_per_minute=1,
             )
             from app.rate_limit import _buckets
+
             _buckets.clear()
 
             client.get("/healthz")

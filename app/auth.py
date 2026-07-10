@@ -43,11 +43,11 @@ def create_refresh_token(
     settings: Settings,
     *,
     subject: str,
-    tenant_id: Optional[str] = None,
+    tenant_id: str | None = None,
 ) -> str:
-    now = dt.datetime.now(dt.timezone.utc)
+    now = dt.datetime.now(dt.UTC)
     exp = now + dt.timedelta(minutes=settings.refresh_token_exp_minutes)
-    payload: Dict[str, Any] = {
+    payload: dict[str, Any] = {
         "sub": subject,
         "exp": int(exp.timestamp()),
         "iat": int(now.timestamp()),
@@ -56,7 +56,7 @@ def create_refresh_token(
     if tenant_id:
         payload["ten"] = tenant_id
     token = jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
-    return token
+    return cast(str, token)
 
 
 def decode_token(settings: Settings, token: str) -> dict[str, Any] | None:
