@@ -3,7 +3,6 @@ from __future__ import annotations
 import io
 import logging
 import mimetypes
-from typing import Optional
 
 import httpx
 from PIL import Image
@@ -11,8 +10,8 @@ from sqlalchemy import select
 
 from ..db import worker_session
 from ..hashing import compute_phash, get_image_dimensions, sha256_bytes
-from ..models import AlbumItem, FigureGallery, Image as ImageModel
-from ..models import ImageVersion, UserImageLink
+from ..models import AlbumItem, FigureGallery, ImageVersion, UserImageLink
+from ..models import Image as ImageModel
 from ..s3 import get_s3, move_object
 from . import celery_app
 
@@ -69,7 +68,11 @@ def verify_and_register_object(image_id: int, bucket: str, key: str, expected_sh
         db.flush()
 
         # Insert version 1 if not exists
-        v1 = db.execute(select(ImageVersion).where(ImageVersion.image_id == img.id, ImageVersion.version_no == 1)).scalar_one_or_none()
+        v1 = db.execute(
+            select(ImageVersion).where(
+                ImageVersion.image_id == img.id, ImageVersion.version_no == 1
+            )
+        ).scalar_one_or_none()
         if not v1:
             v1 = ImageVersion(
                 image_id=img.id,
@@ -87,7 +90,11 @@ def verify_and_register_object(image_id: int, bucket: str, key: str, expected_sh
             db.flush()
 
         # Update links to point to v1 if unset
-        links = db.execute(select(UserImageLink).where(UserImageLink.image_id == img.id)).scalars().all()
+        links = (
+            db.execute(select(UserImageLink).where(UserImageLink.image_id == img.id))
+            .scalars()
+            .all()
+        )
         for link in links:
             if link.current_version_id is None:
                 link.current_version_id = v1.id
@@ -97,8 +104,25 @@ def enqueue_verify(*, image_id: int, bucket: str, key: str, expected_sha256: str
     verify_and_register_object.delay(image_id, bucket, key, expected_sha256)
 
 
+#: Output formats that can carry an alpha channel. The matte transform is
+#: forced into one of these regardless of what the caller requested --
+#: silently downgrading to JPEG would drop the transparency it just produced.
+_ALPHA_CAPABLE_FORMATS = ("PNG", "WEBP")
+
+
 def _apply_transforms(data: bytes, spec: dict) -> tuple[bytes, str, int, int]:
-    img = Image.open(io.BytesIO(data)).convert("RGB")
+    matte_requested = bool(spec.get("matte"))
+    img = Image.open(io.BytesIO(data))
+    if matte_requested:
+        # CRITICAL: do NOT .convert("RGB") here -- that strips any existing
+        # alpha channel before the matting backend even runs. Matting needs
+        # RGBA in, RGBA out.
+        img = img.convert("RGBA")
+        from .matting import get_matting_backend
+
+        img = get_matting_backend().matte(img)
+    else:
+        img = img.convert("RGB")
     # resize
     resize = spec.get("resize")
     if resize:
@@ -115,7 +139,12 @@ def _apply_transforms(data: bytes, spec: dict) -> tuple[bytes, str, int, int]:
     # crop
     crop = spec.get("crop")
     if crop:
-        x, y, w, h = int(crop.get("x", 0)), int(crop.get("y", 0)), int(crop.get("width", img.width)), int(crop.get("height", img.height))
+        x, y, w, h = (
+            int(crop.get("x", 0)),
+            int(crop.get("y", 0)),
+            int(crop.get("width", img.width)),
+            int(crop.get("height", img.height)),
+        )
         img = img.crop((x, y, x + w, y + h))
     # blur (simple)
     blur = spec.get("blur")
@@ -128,6 +157,8 @@ def _apply_transforms(data: bytes, spec: dict) -> tuple[bytes, str, int, int]:
         except Exception:
             pass
     fmt = (spec.get("format") or "JPEG").upper()
+    if matte_requested and fmt not in _ALPHA_CAPABLE_FORMATS:
+        fmt = "PNG"
     quality = int(spec.get("quality") or 85)
     out = io.BytesIO()
     save_kwargs = {"quality": quality}
@@ -170,7 +201,13 @@ def create_transformed_version(
         obj = s3.get_object(Bucket=settings.s3_bucket, Key=vbase.storage_key)
         data: bytes = obj["Body"].read()
         data_out, mime_out, w, h = _apply_transforms(data, transform_spec)
-        s3.put_object(Bucket=settings.s3_bucket, Key=dest_key, Body=data_out, ContentType=mime_out, ACL="private")
+        s3.put_object(
+            Bucket=settings.s3_bucket,
+            Key=dest_key,
+            Body=data_out,
+            ContentType=mime_out,
+            ACL="private",
+        )
 
         v = db.get(ImageVersion, version_id)
         if not v:
@@ -217,10 +254,21 @@ def generate_album_cover(album_id: int) -> str:
     s3 = get_s3()
     # pick first 4 items
     with worker_session() as db:
-        items = db.query(AlbumItem).filter(AlbumItem.album_id == album_id).order_by(AlbumItem.position).limit(4).all()
+        items = (
+            db.query(AlbumItem)
+            .filter(AlbumItem.album_id == album_id)
+            .order_by(AlbumItem.position)
+            .limit(4)
+            .all()
+        )
         keys: list[str] = []
         for it in items:
-            v = db.query(ImageVersion).filter(ImageVersion.image_id == it.image_id).order_by(ImageVersion.version_no).first()
+            v = (
+                db.query(ImageVersion)
+                .filter(ImageVersion.image_id == it.image_id)
+                .order_by(ImageVersion.version_no)
+                .first()
+            )
             if v and v.storage_key:
                 keys.append(v.storage_key)
         # create mosaic
@@ -246,7 +294,13 @@ def generate_album_cover(album_id: int) -> str:
 
         h = hashlib.sha256(data_out).hexdigest()[:8]
         dest_key = f"albums/{album_id}/cover-{h}.webp"
-        s3.put_object(Bucket=settings.s3_bucket, Key=dest_key, Body=data_out, ContentType="image/webp", ACL="public-read")
+        s3.put_object(
+            Bucket=settings.s3_bucket,
+            Key=dest_key,
+            Body=data_out,
+            ContentType="image/webp",
+            ACL="public-read",
+        )
         return dest_key
 
 
@@ -276,7 +330,9 @@ def ingest_gallery_images(*, figure_id: str, images: list[dict]) -> None:
                 resp = httpx.get(url, timeout=30)
                 resp.raise_for_status()
             except Exception:
-                logger.warning("gallery_download_failed", extra={"url": url, "figure_id": figure_id})
+                logger.warning(
+                    "gallery_download_failed", extra={"url": url, "figure_id": figure_id}
+                )
                 continue
 
             data = resp.content

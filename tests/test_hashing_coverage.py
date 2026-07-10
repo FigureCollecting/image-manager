@@ -9,9 +9,14 @@ from __future__ import annotations
 import hashlib
 import io
 
+from app.hashing import (
+    compute_phash,
+    detect_mime,
+    get_image_dimensions,
+    sha256_bytes,
+    sha256_stream,
+)
 from PIL import Image
-
-from app.hashing import compute_phash, get_image_dimensions, sha256_bytes, sha256_stream
 
 
 def _make_png(width: int = 1, height: int = 1, color: tuple = (255, 0, 0)) -> bytes:
@@ -94,3 +99,38 @@ class TestGetImageDimensions:
         w, h = get_image_dimensions(data)
         assert w == 32
         assert h == 16
+
+
+class TestDetectMime:
+    """detect_mime sniffs the REAL mime from image bytes (magic bytes via
+    Pillow), rather than trusting a caller-supplied/assumed content type --
+    the source of the "hardcoded image/jpeg" bug the matting pipeline must
+    not repeat."""
+
+    def test_png_detected_even_with_jpeg_like_name_assumption(self) -> None:
+        data = _make_png(4, 4)
+        assert detect_mime(data) == "image/png"
+
+    def test_jpeg_detected(self) -> None:
+        img = Image.new("RGB", (4, 4), color=(1, 2, 3))
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG")
+        assert detect_mime(buf.getvalue()) == "image/jpeg"
+
+    def test_webp_detected(self) -> None:
+        img = Image.new("RGB", (4, 4), color=(1, 2, 3))
+        buf = io.BytesIO()
+        img.save(buf, format="WEBP")
+        assert detect_mime(buf.getvalue()) == "image/webp"
+
+    def test_rgba_png_detected(self) -> None:
+        img = Image.new("RGBA", (4, 4), color=(1, 2, 3, 0))
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        assert detect_mime(buf.getvalue()) == "image/png"
+
+    def test_unknown_format_falls_back_to_octet_stream(self) -> None:
+        img = Image.new("RGB", (4, 4), color=(1, 2, 3))
+        buf = io.BytesIO()
+        img.save(buf, format="BMP")
+        assert detect_mime(buf.getvalue()) == "application/octet-stream"

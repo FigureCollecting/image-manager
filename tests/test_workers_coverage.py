@@ -9,19 +9,17 @@ from __future__ import annotations
 
 import io
 from contextlib import contextmanager
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
-
-import pytest
-from PIL import Image
-from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 from app.models import (
     Album,
     AlbumItem,
-    Image as ImageModel,
     ImageVersion,
     UserImageLink,
+)
+from app.models import (
+    Image as ImageModel,
 )
 from app.workers.tasks import (
     _apply_transforms,
@@ -31,6 +29,11 @@ from app.workers.tasks import (
     generate_album_cover,
     verify_and_register_object,
 )
+from PIL import Image
+from sqlalchemy import select
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 
 def _make_image_bytes(width: int = 8, height: int = 8, fmt: str = "PNG") -> bytes:
@@ -212,9 +215,7 @@ class TestVerifyAndRegisterObject:
             verify_and_register_object(img.id, "images", "staging/test.png", sha)
 
         versions = (
-            db_session.execute(
-                select(ImageVersion).where(ImageVersion.image_id == img.id)
-            )
+            db_session.execute(select(ImageVersion).where(ImageVersion.image_id == img.id))
             .scalars()
             .all()
         )
@@ -281,6 +282,36 @@ class TestApplyTransforms:
         result, mime, w, h = _apply_transforms(data, {})
         assert w == 16
         assert h == 16
+
+    def test_matte_produces_rgba_output_not_rgb(self) -> None:
+        """CRITICAL: the matte transform must never .convert('RGB') --
+        that would strip the alpha channel the rest of the pipeline
+        (grounding scalars, serve route) depends on."""
+        data = _make_image_bytes(32, 32, fmt="PNG")
+        result, mime, w, h = _apply_transforms(data, {"matte": True})
+        assert mime == "image/png"
+        out_img = Image.open(io.BytesIO(result))
+        assert out_img.mode == "RGBA"
+        assert w == 32
+        assert h == 32
+
+    def test_matte_forces_alpha_capable_format_even_if_jpeg_requested(self) -> None:
+        data = _make_image_bytes(16, 16)
+        result, mime, w, h = _apply_transforms(data, {"matte": True, "format": "JPEG"})
+        assert mime == "image/png"
+        out_img = Image.open(io.BytesIO(result))
+        assert out_img.mode == "RGBA"
+
+    def test_matte_composes_with_resize(self) -> None:
+        data = _make_image_bytes(64, 64, fmt="PNG")
+        result, mime, w, h = _apply_transforms(
+            data, {"matte": True, "resize": {"width": 16, "height": 16}}
+        )
+        assert w == 16
+        assert h == 16
+        assert mime == "image/png"
+        out_img = Image.open(io.BytesIO(result))
+        assert out_img.mode == "RGBA"
 
     def test_quality_parameter(self) -> None:
         data = _make_image_bytes(32, 32)
@@ -439,9 +470,7 @@ class TestGenerateAlbumCover:
             )
             db_session.add(v)
             db_session.flush()
-            item = AlbumItem(
-                album_id=album.id, position=i, image_id=img.id, version_id=v.id
-            )
+            item = AlbumItem(album_id=album.id, position=i, image_id=img.id, version_id=v.id)
             db_session.add(item)
 
         db_session.flush()
