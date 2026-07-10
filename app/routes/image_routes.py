@@ -2,6 +2,7 @@ import datetime as dt
 import random
 import string
 import uuid
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
@@ -25,6 +26,7 @@ from ..schemas import (
     InitiateUploadRequest,
     OkResponse,
     SetVisibilityRequest,
+    VersionSummary,
 )
 from ..workers.tasks import enqueue_transform
 
@@ -35,7 +37,7 @@ router = APIRouter(prefix="/images", tags=["images"])
 def initiate_upload(
     payload: InitiateUploadRequest,
     ctx: AuthCtx = Depends(require_auth_ctx),  # noqa: B008
-) -> dict:
+) -> dict[str, Any]:
     settings = get_settings()
     staging_key = f"uploads/{uuid.uuid4()}/{payload.filename}"
     presigned = presign_post_for_upload(staging_key, content_type=payload.mime, size=payload.size)
@@ -120,17 +122,17 @@ def get_image(
         width=img.width,
         height=img.height,
         versions=[
-            {
-                "id": v.id,
-                "version_no": v.version_no,
-                "visibility": v.visibility,
-                "age_rating": v.age_rating,
-                "alt_for_version_id": v.alt_for_version_id,
-                "mime": v.mime,
-                "width": v.width,
-                "height": v.height,
-                "bytes": v.bytes,
-            }
+            VersionSummary(
+                id=v.id,
+                version_no=v.version_no,
+                visibility=v.visibility,
+                age_rating=v.age_rating,
+                alt_for_version_id=v.alt_for_version_id,
+                mime=v.mime,
+                width=v.width,
+                height=v.height,
+                bytes=v.bytes,
+            )
             for v in versions
         ],
     )

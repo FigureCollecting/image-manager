@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+from typing import Any
 
 from sqlalchemy import (
     JSON,
@@ -54,7 +55,7 @@ class ImageVersion(Base):
     )
     version_no: Mapped[int] = mapped_column(Integer, nullable=False)
     derived_from_version: Mapped[int | None] = mapped_column(Integer)
-    transform_spec: Mapped[dict] = mapped_column(JSON, default=dict)
+    transform_spec: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     mime: Mapped[str | None] = mapped_column(String(100))
     width: Mapped[int | None] = mapped_column(Integer)
     height: Mapped[int | None] = mapped_column(Integer)
@@ -105,7 +106,7 @@ class AuditEvent(Base):
     image_id: Mapped[int | None] = mapped_column(Integer)
     version_id: Mapped[int | None] = mapped_column(Integer)
     action: Mapped[str] = mapped_column(String(100), nullable=False)
-    details: Mapped[dict] = mapped_column(JSON, default=dict)
+    details: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     ts: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: dt.datetime.now(dt.UTC), nullable=False
     )

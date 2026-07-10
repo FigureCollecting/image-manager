@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from typing import Any
 
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.sql.elements import ColumnElement
+
+TextColumn = InstrumentedAttribute[Any] | ColumnElement[Any]
 
 
 def is_postgres(db: Session) -> bool:
@@ -12,15 +16,15 @@ def is_postgres(db: Session) -> bool:
     return db.bind.dialect.name == "postgresql"  # type: ignore[union-attr]
 
 
-def tsvector_concat(*cols: ColumnElement) -> ColumnElement:
+def tsvector_concat(*cols: TextColumn) -> ColumnElement[Any]:
     return func.to_tsvector("simple", func.coalesce(func.concat_ws(" ", *cols), ""))
 
 
-def ts_query(query: str) -> ColumnElement:
+def ts_query(query: str) -> ColumnElement[Any]:
     return func.plainto_tsquery("simple", query)
 
 
-def build_text_filter(db: Session, query: str, *cols: ColumnElement) -> ColumnElement:
+def build_text_filter(db: Session, query: str, *cols: TextColumn) -> ColumnElement[Any]:
     """Build a text-search filter clause.
 
     On PostgreSQL: uses to_tsvector / plainto_tsquery for proper full-text search.
@@ -34,7 +38,7 @@ def build_text_filter(db: Session, query: str, *cols: ColumnElement) -> ColumnEl
     return or_(*(col.ilike(pattern) for col in cols))
 
 
-def tags_any_match(col_tags: ColumnElement, tags: Iterable[str]) -> ColumnElement:
+def tags_any_match(col_tags: TextColumn, tags: Iterable[str]) -> ColumnElement[Any]:
     # expects an array column; use overlap operator
     arr = func.ARRAY(list(tags))
     return col_tags.op("&&")(arr)

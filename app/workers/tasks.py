@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import logging
 import mimetypes
+from typing import Any
 
 from PIL import Image
 from sqlalchemy import select
@@ -103,7 +104,7 @@ def enqueue_verify(*, image_id: int, bucket: str, key: str, expected_sha256: str
     verify_and_register_object.delay(image_id, bucket, key, expected_sha256)
 
 
-def _apply_transforms(data: bytes, spec: dict) -> tuple[bytes, str, int, int]:
+def _apply_transforms(data: bytes, spec: dict[str, Any]) -> tuple[bytes, str, int, int]:
     img = Image.open(io.BytesIO(data)).convert("RGB")
     # resize
     resize = spec.get("resize")
@@ -141,7 +142,6 @@ def _apply_transforms(data: bytes, spec: dict) -> tuple[bytes, str, int, int]:
     fmt = (spec.get("format") or "JPEG").upper()
     quality = int(spec.get("quality") or 85)
     out = io.BytesIO()
-    save_kwargs = {"quality": quality}
     if fmt == "WEBP":
         mime = "image/webp"
         img.save(out, format="WEBP", quality=quality)
@@ -153,7 +153,7 @@ def _apply_transforms(data: bytes, spec: dict) -> tuple[bytes, str, int, int]:
         img.save(out, format="PNG")
     else:
         mime = "image/jpeg"
-        img.save(out, format="JPEG", **save_kwargs)
+        img.save(out, format="JPEG", quality=quality)
     data_out = out.getvalue()
     return data_out, mime, img.width, img.height
 
@@ -164,7 +164,7 @@ def create_transformed_version(
     image_id: int,
     base_version_id: int,
     version_id: int,
-    transform_spec: dict,
+    transform_spec: dict[str, Any],
     dest_key: str,
     visibility: str,
     age_rating: int,
@@ -208,7 +208,7 @@ def enqueue_transform(
     image_id: int,
     base_version_id: int,
     version_id: int,
-    transform_spec: dict,
+    transform_spec: dict[str, Any],
     dest_key: str,
     visibility: str,
     age_rating: int,

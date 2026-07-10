@@ -15,6 +15,7 @@ from ..schemas import (
     AddAlbumItemResponse,
     AlbumCoverResponse,
     AlbumDetailResponse,
+    AlbumItemSummary,
     CreateAlbumRequest,
     CreateAlbumResponse,
     OkResponse,
@@ -129,7 +130,7 @@ def get_album(
         is_shareable=album.is_shareable,
         share_age_threshold=album.share_age_threshold,
         items=[
-            {"position": it.position, "image_id": it.image_id, "version_id": it.version_id}
+            AlbumItemSummary(position=it.position, image_id=it.image_id, version_id=it.version_id)
             for it in items
         ],
     )
