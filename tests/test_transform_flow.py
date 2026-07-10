@@ -1,5 +1,7 @@
 """Tests for image version creation, visibility, safe-alt, and external refs."""
 
+import datetime as dt
+
 from app.models import ExternalRef, Image, ImageVersion
 from sqlalchemy import select
 
@@ -661,6 +663,81 @@ class TestExternalRefs:
         )
         assert r.status_code == 200
         assert r.json()["url"]
+
+    def test_soft_deleted_pinned_version_404_no_url(
+        self, client, auth_headers, db_session, link_image_to_user
+    ):
+        """A ref pinned to a soft-deleted version must 404 and leak no
+        presigned URL -- serve_routes filters deleted_at, so external must
+        too, else a revoked version stays resolvable through the ref."""
+        img = Image(sha256="f7" * 32, bytes=100, mime="image/jpeg", storage_key="k/f7")
+        db_session.add(img)
+        db_session.flush()
+        link_image_to_user(img.id)
+        v = ImageVersion(
+            image_id=img.id,
+            version_no=1,
+            transform_spec={},
+            mime="image/jpeg",
+            width=200,
+            height=200,
+            bytes=100,
+            storage_key="k/f7",
+            visibility="private",
+            age_rating=0,
+            deleted_at=dt.datetime.now(dt.UTC),
+        )
+        db_session.add(v)
+        db_session.flush()
+        er = ExternalRef(
+            ref_type="post", ref_id="f7", image_id=img.id, version_id=v.id, tenant_id=None
+        )
+        db_session.add(er)
+        db_session.commit()
+
+        r = client.get(
+            "/external/assets/by-external-ref?ref_type=post&ref_id=f7",
+            headers=auth_headers,
+        )
+        assert r.status_code == 404
+        assert "url" not in r.json()
+
+    def test_soft_deleted_fallback_version_404_no_url(
+        self, client, auth_headers, db_session, link_image_to_user
+    ):
+        """The fallback (no version_id) query must also skip soft-deleted
+        versions: an unpinned ref whose only version is deleted must 404."""
+        img = Image(sha256="f8" * 32, bytes=100, mime="image/jpeg", storage_key="k/f8")
+        db_session.add(img)
+        db_session.flush()
+        link_image_to_user(img.id)
+        v = ImageVersion(
+            image_id=img.id,
+            version_no=1,
+            transform_spec={},
+            mime="image/jpeg",
+            width=200,
+            height=200,
+            bytes=100,
+            storage_key="k/f8",
+            visibility="private",
+            age_rating=0,
+            deleted_at=dt.datetime.now(dt.UTC),
+        )
+        db_session.add(v)
+        db_session.flush()
+        er = ExternalRef(
+            ref_type="post", ref_id="f8", image_id=img.id, version_id=None, tenant_id=None
+        )
+        db_session.add(er)
+        db_session.commit()
+
+        r = client.get(
+            "/external/assets/by-external-ref?ref_type=post&ref_id=f8",
+            headers=auth_headers,
+        )
+        assert r.status_code == 404
+        assert "url" not in r.json()
 
     def test_lookup_missing_ref_404(self, client, auth_headers):
         r = client.get(

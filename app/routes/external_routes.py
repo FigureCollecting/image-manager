@@ -74,13 +74,22 @@ def by_external_ref(
         if er.version_id
         else db.execute(
             select(ImageVersion)
-            .where(ImageVersion.image_id == er.image_id)
+            .where(
+                ImageVersion.image_id == er.image_id,
+                ImageVersion.deleted_at.is_(None),
+            )
             .order_by(ImageVersion.version_no)
         )
         .scalars()
         .first()
     )
     if not img or not v:
+        raise HTTPException(status_code=404, detail="not found")
+
+    # A soft-deleted (revoked) version must not resolve through a ref -- mirror
+    # serve_routes' deleted_at filter. The fallback query above already skips
+    # deleted versions; this also catches a ref pinned to one. 404, no oracle.
+    if v.deleted_at is not None:
         raise HTTPException(status_code=404, detail="not found")
 
     # The resolved version MUST belong to the ref's image; caller_owns and the
