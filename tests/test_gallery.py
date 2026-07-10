@@ -192,6 +192,130 @@ class TestGalleryGet:
         assert resp.status_code == 401
 
 
+class TestGalleryDisplayMeta:
+    """GET /galleries/{figureId}/display-meta — grounding metadata for
+    fc-mobile, mapped from the flat ImageVersion columns into the nested
+    FigureDisplayMeta shape (contactBand: {centerXFrac, widthFrac})."""
+
+    def test_maps_flat_columns_to_nested_contact_band(
+        self, client: TestClient, auth_headers: dict, db_session: Session
+    ) -> None:
+        from app.models import FigureGallery
+
+        img = ImageModel(sha256="dm1" + "0" * 61, storage_key="gal/dm1.png")
+        db_session.add(img)
+        db_session.flush()
+
+        v1 = ImageVersion(
+            image_id=img.id,
+            version_no=1,
+            transform_spec={},
+            mime="image/png",
+            width=100,
+            height=100,
+            bytes=100,
+            storage_key="gal/dm1.png",
+            visibility="private",
+            age_rating=0,
+        )
+        db_session.add(v1)
+        v2 = ImageVersion(
+            image_id=img.id,
+            version_no=2,
+            transform_spec={"matte": True},
+            mime="image/png",
+            width=100,
+            height=100,
+            bytes=100,
+            storage_key="gal/dm1-matte.png",
+            visibility="public",
+            age_rating=0,
+            matted=True,
+            bottom_margin_frac=0.0421,
+            contact_band_center_x_frac=0.52,
+            contact_band_width_frac=0.31,
+            thumbhash="L6Pj0^jE.AyE_3t7t7R**0o#DgR4",
+            dominant_color="#8899AA",
+        )
+        db_session.add(v2)
+        db_session.flush()
+
+        gallery = FigureGallery(
+            figure_id="mfc-dm-1",
+            source_url="https://mfc.net/dm1.jpg",
+            image_id=img.id,
+            position=0,
+            source="mfc",
+        )
+        db_session.add(gallery)
+        db_session.commit()
+
+        resp = client.get("/galleries/mfc-dm-1/display-meta", headers=auth_headers)
+        assert resp.status_code == 200
+        data = resp.json()
+
+        assert data["matted"] is True
+        assert data["matteImageId"] == str(img.id)
+        assert data["matteVersionId"] == str(v2.id)
+        assert data["bottomMarginFrac"] == pytest.approx(0.0421)
+        # NESTED, not flat -- this is the shape fc-shared's FigureDisplayMeta
+        # (and fc-mobile) expect: contactBand: { centerXFrac, widthFrac }.
+        assert data["contactBand"] == {
+            "centerXFrac": pytest.approx(0.52),
+            "widthFrac": pytest.approx(0.31),
+        }
+        assert "contact_band_center_x_frac" not in data
+        assert "contact_band_width_frac" not in data
+        assert data["thumbhash"] == "L6Pj0^jE.AyE_3t7t7R**0o#DgR4"
+        assert data["dominantColor"] == "#8899AA"
+
+    def test_no_matted_version_returns_matted_false(
+        self, client: TestClient, auth_headers: dict, db_session: Session
+    ) -> None:
+        from app.models import FigureGallery
+
+        img = ImageModel(sha256="dm2" + "0" * 61, storage_key="gal/dm2.png")
+        db_session.add(img)
+        db_session.flush()
+        v1 = ImageVersion(
+            image_id=img.id,
+            version_no=1,
+            transform_spec={},
+            mime="image/jpeg",
+            width=100,
+            height=100,
+            bytes=100,
+            storage_key="gal/dm2.jpg",
+            visibility="private",
+            age_rating=0,
+        )
+        db_session.add(v1)
+        gallery = FigureGallery(
+            figure_id="mfc-dm-2",
+            source_url="https://mfc.net/dm2.jpg",
+            image_id=img.id,
+            position=0,
+            source="mfc",
+        )
+        db_session.add(gallery)
+        db_session.commit()
+
+        resp = client.get("/galleries/mfc-dm-2/display-meta", headers=auth_headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["matted"] is False
+        assert data["matteImageId"] is None
+        assert data["contactBand"] is None
+
+    def test_unknown_figure_404(self, client: TestClient, auth_headers: dict) -> None:
+        resp = client.get("/galleries/mfc-nonexistent-dm/display-meta", headers=auth_headers)
+        assert resp.status_code == 404
+
+    def test_requires_auth(self, client: TestClient) -> None:
+        resp = client.get("/galleries/mfc-1/display-meta")
+        assert resp.status_code == 401
+
+
 class TestGalleryDeleteImage:
     """DELETE /galleries/{figureId}/images/{imageId} — soft delete."""
 

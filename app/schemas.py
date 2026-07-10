@@ -305,3 +305,28 @@ class GalleryDetailResponse(BaseModel):
 
 class ReorderGalleryRequest(BaseModel):
     imageIds: list[int] = []
+
+
+# ---------------------------------------------------------------------------
+# Display + grounding metadata (image-manager -> fc-mobile contract)
+#
+# Field names/nesting here are the FROZEN cross-service contract mirrored by
+# fc-shared's FigureDisplayMeta (fc-shared/src/types/index.ts) -- do not
+# rename/retype without updating both sides. In particular, contact_band_*
+# is stored as FLAT columns on ImageVersion but must be served NESTED here.
+# ---------------------------------------------------------------------------
+
+
+class ContactBandResponse(BaseModel):
+    centerXFrac: float
+    widthFrac: float
+
+
+class DisplayMetaResponse(BaseModel):
+    matted: bool = False
+    matteImageId: str | None = None
+    matteVersionId: str | None = None
+    bottomMarginFrac: float | None = None
+    contactBand: ContactBandResponse | None = None
+    thumbhash: str | None = None
+    dominantColor: str | None = None

@@ -7,9 +7,11 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..deps import require_auth_ctx
-from ..models import FigureGallery
+from ..models import FigureGallery, ImageVersion
 from ..policy import AuthCtx
 from ..schemas import (
+    ContactBandResponse,
+    DisplayMetaResponse,
     GalleryDetailResponse,
     GalleryImageSummary,
     IngestGalleryRequest,
@@ -47,7 +49,10 @@ def ingest_gallery(
     if new_images:
         ingest_gallery_images.delay(
             figure_id=figure_id,
-            images=[{"url": img.url, "position": img.position, "caption": img.caption} for img in new_images],
+            images=[
+                {"url": img.url, "position": img.position, "caption": img.caption}
+                for img in new_images
+            ],
         )
 
     return IngestGalleryResponse(
@@ -84,6 +89,58 @@ def get_gallery(
             for e in entries
         ],
         count=len(entries),
+    )
+
+
+@router.get("/{figure_id}/display-meta", response_model=DisplayMetaResponse)
+def get_gallery_display_meta(
+    figure_id: str,
+    db: Session = Depends(get_db),  # noqa: B008
+    ctx: AuthCtx = Depends(require_auth_ctx),  # noqa: B008
+) -> DisplayMetaResponse:
+    entry = (
+        db.query(FigureGallery)
+        .filter(
+            FigureGallery.figure_id == figure_id,
+            FigureGallery.deleted_at.is_(None),
+        )
+        .order_by(FigureGallery.position)
+        .first()
+    )
+    if not entry:
+        raise HTTPException(status_code=404, detail="not found")
+
+    matted_version = (
+        db.query(ImageVersion)
+        .filter(
+            ImageVersion.image_id == entry.image_id,
+            ImageVersion.matted.is_(True),
+            ImageVersion.deleted_at.is_(None),
+        )
+        .order_by(ImageVersion.version_no.desc())
+        .first()
+    )
+    if not matted_version:
+        return DisplayMetaResponse(matted=False)
+
+    contact_band = None
+    if (
+        matted_version.contact_band_center_x_frac is not None
+        and matted_version.contact_band_width_frac is not None
+    ):
+        contact_band = ContactBandResponse(
+            centerXFrac=matted_version.contact_band_center_x_frac,
+            widthFrac=matted_version.contact_band_width_frac,
+        )
+
+    return DisplayMetaResponse(
+        matted=True,
+        matteImageId=str(entry.image_id),
+        matteVersionId=str(matted_version.id),
+        bottomMarginFrac=matted_version.bottom_margin_frac,
+        contactBand=contact_band,
+        thumbhash=matted_version.thumbhash,
+        dominantColor=matted_version.dominant_color,
     )
 
 
