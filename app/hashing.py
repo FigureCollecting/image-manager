@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import io
-from typing import BinaryIO
+from typing import BinaryIO, Tuple
 
-from imagehash import phash
 from PIL import Image
+from imagehash import phash
 
 
 def sha256_bytes(data: bytes) -> str:
@@ -28,7 +28,7 @@ def compute_phash(data: bytes) -> str:
     return str(hash_val)
 
 
-def get_image_dimensions(data: bytes) -> tuple[int, int]:
+def get_image_dimensions(data: bytes) -> Tuple[int, int]:
     img = Image.open(io.BytesIO(data))
     return img.width, img.height
 
@@ -52,3 +52,4 @@ def detect_mime(data: bytes) -> str:
     img = Image.open(io.BytesIO(data))
     fmt = (img.format or "").upper()
     return _FORMAT_TO_MIME.get(fmt, "application/octet-stream")
+

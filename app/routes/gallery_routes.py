@@ -49,10 +49,7 @@ def ingest_gallery(
     if new_images:
         ingest_gallery_images.delay(
             figure_id=figure_id,
-            images=[
-                {"url": img.url, "position": img.position, "caption": img.caption}
-                for img in new_images
-            ],
+            images=[{"url": img.url, "position": img.position, "caption": img.caption} for img in new_images],
         )
 
     return IngestGalleryResponse(
