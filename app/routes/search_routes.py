@@ -6,7 +6,12 @@ from ..db import get_db
 from ..deps import require_auth_ctx
 from ..models import Album, AlbumTag, Image, ImageTag, Tag, UserImageLink
 from ..policy import AuthCtx
-from ..schemas import AlbumSearchResponse, ImageSearchResponse
+from ..schemas import (
+    AlbumSearchResponse,
+    AlbumSearchResult,
+    ImageSearchResponse,
+    ImageSearchResult,
+)
 from ..search import build_text_filter
 
 router = APIRouter(prefix="/search", tags=["search"])
@@ -45,7 +50,7 @@ def search_images(
     results = rows[:limit]
     next_cursor = results[-1].id if has_next else None
     return ImageSearchResponse(
-        results=[{"id": r.id, "mime": r.mime, "sha256": r.sha256} for r in results],
+        results=[ImageSearchResult(id=r.id, mime=r.mime, sha256=r.sha256) for r in results],
         next_cursor=next_cursor,
     )
 
@@ -81,6 +86,6 @@ def search_albums(
     results = rows[:limit]
     next_cursor = results[-1].id if has_next else None
     return AlbumSearchResponse(
-        results=[{"id": r.id, "title": r.title} for r in results],
+        results=[AlbumSearchResult(id=r.id, title=r.title) for r in results],
         next_cursor=next_cursor,
     )

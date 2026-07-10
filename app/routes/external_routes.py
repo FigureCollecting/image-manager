@@ -51,7 +51,9 @@ def by_external_ref(
         db.get(ImageVersion, er.version_id)
         if er.version_id
         else db.execute(
-            select(ImageVersion).where(ImageVersion.image_id == er.image_id).order_by(ImageVersion.version_no)
+            select(ImageVersion)
+            .where(ImageVersion.image_id == er.image_id)
+            .order_by(ImageVersion.version_no)
         )
         .scalars()
         .first()

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, cast
 
 from jose import JWTError, jwt
 from sqlalchemy.orm import Session
@@ -17,14 +17,14 @@ def create_token(
     settings: Settings,
     *,
     subject: str,
-    tenant_id: Optional[str] = None,
-    scopes: Optional[list[str]] = None,
-    audience: Optional[str] = None,
-    ttl_minutes: Optional[int] = None,
+    tenant_id: str | None = None,
+    scopes: list[str] | None = None,
+    audience: str | None = None,
+    ttl_minutes: int | None = None,
 ) -> str:
-    now = dt.datetime.now(dt.timezone.utc)
+    now = dt.datetime.now(dt.UTC)
     exp = now + dt.timedelta(minutes=ttl_minutes or settings.token_exp_minutes)
-    payload: Dict[str, Any] = {
+    payload: dict[str, Any] = {
         "sub": subject,
         "exp": int(exp.timestamp()),
         "iat": int(now.timestamp()),
@@ -36,7 +36,7 @@ def create_token(
     if audience:
         payload["aud"] = audience
     token = jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
-    return token
+    return cast(str, token)
 
 
 def create_refresh_token(
@@ -61,7 +61,10 @@ def create_refresh_token(
 
 def decode_token(settings: Settings, token: str) -> dict[str, Any] | None:
     try:
-        return jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
+        return cast(
+            dict[str, Any],
+            jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm]),
+        )
     except JWTError as e:
         logger.warning("jwt_decode_failed", extra={"error": str(e)})
         return None
@@ -71,9 +74,9 @@ def issue_dev_token(
     db: Session,
     settings: Settings,
     *,
-    user_id: Optional[str] = None,
-    tenant_id: Optional[str] = None,
-    aud: Optional[str] = None,
+    user_id: str | None = None,
+    tenant_id: str | None = None,
+    aud: str | None = None,
 ) -> str:
     if aud and aud.startswith("service:"):
         # service token with scopes looked up from DB
@@ -87,4 +90,3 @@ def issue_dev_token(
     if not user_id:
         raise ValueError("user_id required for user tokens")
     return create_token(settings, subject=user_id, tenant_id=tenant_id, scopes=[])
-

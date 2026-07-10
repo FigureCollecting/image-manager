@@ -15,6 +15,7 @@ from ..schemas import (
     AddAlbumItemResponse,
     AlbumCoverResponse,
     AlbumDetailResponse,
+    AlbumItemSummary,
     CreateAlbumRequest,
     CreateAlbumResponse,
     OkResponse,
@@ -117,7 +118,13 @@ def get_album(
     album = db.get(Album, album_id)
     if not album or album.deleted_at is not None or (album.tenant_id and album.tenant_id != ctx.tenant_id):
         raise HTTPException(status_code=404, detail="not found")
-    items = db.execute(select(AlbumItem).where(AlbumItem.album_id == album_id).order_by(AlbumItem.position)).scalars().all()
+    items = (
+        db.execute(
+            select(AlbumItem).where(AlbumItem.album_id == album_id).order_by(AlbumItem.position)
+        )
+        .scalars()
+        .all()
+    )
     return AlbumDetailResponse(
         id=album.id,
         title=album.title,
@@ -126,7 +133,7 @@ def get_album(
         is_shareable=album.is_shareable,
         share_age_threshold=album.share_age_threshold,
         items=[
-            {"position": it.position, "image_id": it.image_id, "version_id": it.version_id}
+            AlbumItemSummary(position=it.position, image_id=it.image_id, version_id=it.version_id)
             for it in items
         ],
     )
@@ -178,6 +185,6 @@ def delete_album(
     album = db.get(Album, album_id)
     if not album or album.deleted_at is not None or (album.tenant_id and album.tenant_id != ctx.tenant_id):
         raise HTTPException(status_code=404, detail="not found")
-    album.deleted_at = dt.datetime.now(dt.timezone.utc)
+    album.deleted_at = dt.datetime.now(dt.UTC)
     db.commit()
     return OkResponse(ok=True)

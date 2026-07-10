@@ -73,7 +73,9 @@ def db_engine():
 
 @pytest.fixture()
 def db_session(db_engine) -> Generator[Session, None, None]:  # type: ignore[type-arg]
-    TestSession = sessionmaker(bind=db_engine, autoflush=False, autocommit=False, expire_on_commit=False)
+    TestSession = sessionmaker(
+        bind=db_engine, autoflush=False, autocommit=False, expire_on_commit=False
+    )
     session = TestSession()
     try:
         yield session

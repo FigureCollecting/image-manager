@@ -65,6 +65,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
+          file: Dockerfile.api
           load: true
           tags: image-manager:scan
           cache-from: type=gha
