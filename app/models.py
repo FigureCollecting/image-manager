@@ -10,6 +10,7 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     Enum,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -61,6 +62,12 @@ class ImageVersion(Base):
     alt_for_version_id: Mapped[Optional[int]] = mapped_column(Integer)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=lambda: dt.datetime.now(dt.timezone.utc), nullable=False)
     deleted_at: Mapped[Optional[dt.datetime]] = mapped_column(DateTime(timezone=True))
+    matted: Mapped[bool] = mapped_column(Boolean, server_default="false", nullable=False)
+    bottom_margin_frac: Mapped[Optional[float]] = mapped_column(Float)
+    contact_band_center_x_frac: Mapped[Optional[float]] = mapped_column(Float)
+    contact_band_width_frac: Mapped[Optional[float]] = mapped_column(Float)
+    thumbhash: Mapped[Optional[str]] = mapped_column(String(64))
+    dominant_color: Mapped[Optional[str]] = mapped_column(String(32))
 
     __table_args__ = (
         UniqueConstraint("image_id", "version_no", name="uq_image_version_no"),
