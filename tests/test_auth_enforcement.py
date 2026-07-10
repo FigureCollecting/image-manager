@@ -6,6 +6,10 @@ most routes. After adding get_auth_ctx checks, they should all pass.
 
 from __future__ import annotations
 
+import hashlib
+import io
+from unittest.mock import MagicMock, patch
+
 # ---------------------------------------------------------------------------
 # Image routes
 # ---------------------------------------------------------------------------
@@ -35,11 +39,22 @@ class TestImageRoutesRequireAuth:
         assert r.status_code == 401
 
     def test_complete_upload_with_auth(self, client, auth_headers):
-        r = client.post(
-            "/images/complete",
-            json={"sha256": "a" * 64, "key": "uploads/k", "mime": "image/jpeg", "size": 1024},
-            headers=auth_headers,
-        )
+        # Mock the staging object so the possession proof doesn't reach out
+        # to a real S3 endpoint; this test only asserts auth clearance.
+        data = b"auth-check-bytes"
+        mock_s3 = MagicMock()
+        mock_s3.get_object.return_value = {"Body": io.BytesIO(data)}
+        with patch("app.routes.image_routes.get_s3", return_value=mock_s3):
+            r = client.post(
+                "/images/complete",
+                json={
+                    "sha256": hashlib.sha256(data).hexdigest(),
+                    "key": "uploads/k",
+                    "mime": "image/jpeg",
+                    "size": len(data),
+                },
+                headers=auth_headers,
+            )
         assert r.status_code != 401
 
     def test_get_image_no_auth(self, client):

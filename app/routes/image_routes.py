@@ -4,6 +4,7 @@ import string
 import uuid
 from typing import Any
 
+from botocore.exceptions import ClientError
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -11,9 +12,10 @@ from sqlalchemy.orm import Session
 from ..config import get_settings
 from ..db import get_db
 from ..deps import require_auth_ctx
+from ..hashing import sha256_stream
 from ..models import Image, ImageVersion, UserImageLink
 from ..policy import AuthCtx
-from ..s3 import presign_post_for_upload
+from ..s3 import get_s3, presign_post_for_upload
 from ..schemas import (
     CompleteUploadRequest,
     CompleteUploadResponse,
@@ -60,6 +62,28 @@ def initiate_upload(
     return presigned
 
 
+def _prove_staging_possession(key: str, expected_sha256: str) -> None:
+    """SYNCHRONOUSLY prove the caller possesses bytes hashing to the sha256
+    they claim, by fetching and hashing THEIR staging object before any DB
+    write. Without this, complete_upload is a forgeable ownership primitive:
+    any image's sha256 leaks as its ETag on /serve and /public, so an
+    attacker could replay a victim's hash with an arbitrary staging key and
+    mint themselves an owner UserImageLink on the victim's image. The async
+    verify task only LOGS on mismatch -- it never revokes the link -- so the
+    gate must happen here, before the link (and the Image row) exist.
+    The object is hashed in streamed chunks; nothing is buffered whole."""
+    settings = get_settings()
+    s3 = get_s3()
+    try:
+        obj = s3.get_object(Bucket=settings.s3_bucket, Key=key)
+    except ClientError as exc:
+        # No (readable) staging object at the caller's key: nothing to prove
+        # possession of. Fail closed -- register no image, mint no link.
+        raise HTTPException(status_code=404, detail="staging object not found") from exc
+    if sha256_stream(obj["Body"]) != expected_sha256:
+        raise HTTPException(status_code=400, detail="sha256 mismatch")
+
+
 @router.post("/complete", response_model=CompleteUploadResponse)
 def complete_upload(
     payload: CompleteUploadRequest,
@@ -67,6 +91,11 @@ def complete_upload(
     ctx: AuthCtx = Depends(require_auth_ctx),  # noqa: B008
 ) -> CompleteUploadResponse:
     settings = get_settings()
+
+    # Proof of possession gates EVERYTHING below -- including the dedup path:
+    # when the Image row already exists, a co-owner link is minted, so the
+    # caller must still prove they hold matching bytes themselves.
+    _prove_staging_possession(payload.key, payload.sha256)
 
     # Idempotent by sha256
     img = db.execute(select(Image).where(Image.sha256 == payload.sha256)).scalar_one_or_none()
@@ -97,7 +126,9 @@ def complete_upload(
 
     db.commit()
 
-    # Defer to worker to verify/move and create v1
+    # Defer to worker to move the object to its final key and create v1. Its
+    # sha check is now a harmless double-check behind the synchronous
+    # possession proof above -- the link is never gated on the worker.
     try:
         from ..workers.tasks import enqueue_verify
 
