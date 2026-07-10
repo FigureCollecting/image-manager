@@ -30,6 +30,9 @@ def ingest_gallery(
     db: Session = Depends(get_db),  # noqa: B008
     ctx: AuthCtx = Depends(require_auth_ctx),  # noqa: B008
 ) -> IngestGalleryResponse:
+    # TODO(C1): galleries are fully open to any authenticated caller
+    # (FigureGallery has no owner column); needs the grant model. Do NOT add a
+    # service-only stopgap -- it would break the ingest flow.
     figure_id = payload.figureId
 
     # Check which source_urls already exist for this figure
@@ -101,6 +104,9 @@ def get_gallery_display_meta(
     db: Session = Depends(get_db),  # noqa: B008
     ctx: AuthCtx = Depends(require_auth_ctx),  # noqa: B008
 ) -> DisplayMetaResponse:
+    # TODO(C1): galleries are fully open to any authenticated caller
+    # (FigureGallery has no owner column); needs the grant model. Do NOT add a
+    # service-only stopgap -- it would break the ingest flow.
     entry = (
         db.query(FigureGallery)
         .filter(
@@ -154,6 +160,9 @@ def delete_gallery_image(
     db: Session = Depends(get_db),  # noqa: B008
     ctx: AuthCtx = Depends(require_auth_ctx),  # noqa: B008
 ) -> OkResponse:
+    # TODO(C1): galleries are fully open to any authenticated caller
+    # (FigureGallery has no owner column); needs the grant model. Do NOT add a
+    # service-only stopgap -- it would break the ingest flow.
     entry = (
         db.query(FigureGallery)
         .filter(
@@ -177,6 +186,9 @@ def reorder_gallery(
     db: Session = Depends(get_db),  # noqa: B008
     ctx: AuthCtx = Depends(require_auth_ctx),  # noqa: B008
 ) -> OkResponse:
+    # TODO(C1): galleries are fully open to any authenticated caller
+    # (FigureGallery has no owner column); needs the grant model. Do NOT add a
+    # service-only stopgap -- it would break the ingest flow.
     entries = (
         db.query(FigureGallery)
         .filter(

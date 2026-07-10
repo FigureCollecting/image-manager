@@ -68,6 +68,8 @@ def tag_album(
     _check_album_access(db.get(Album, album_id), ctx)
     ids: list[int] = list(payload.tag_ids)
     if payload.names:
+        # TODO(C1): resolving tags by global name is an existence oracle and
+        # allows attaching foreign tags; needs the tag tenant/ownership model.
         tags = db.execute(select(Tag).where(Tag.name.in_(payload.names))).scalars().all()
         ids.extend([t.id for t in tags])
     ids = list({int(i) for i in ids})
