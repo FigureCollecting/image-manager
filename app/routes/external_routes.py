@@ -23,6 +23,18 @@ def create_external_ref(
     db: Session = Depends(get_db),  # noqa: B008
     ctx: AuthCtx = Depends(require_auth_ctx),  # noqa: B008
 ) -> CreateExternalRefResponse:
+    # The caller must own the ref's image (service tokens bypass). Without this
+    # an attacker could register a ref against a victim's image -- and also
+    # squat the unique (ref_type, ref_id) namespace. 404 so an unowned image
+    # is indistinguishable from a nonexistent one.
+    if not _caller_owns_image(db, ctx, payload.image_id):
+        raise HTTPException(status_code=404, detail="not found")
+    if payload.version_id is not None:
+        # A pinned version must belong to the ref's image; a decoupled
+        # (image_id A, version_id V-of-B) ref is the read-side IDOR vector.
+        v = db.get(ImageVersion, payload.version_id)
+        if not v or v.image_id != payload.image_id:
+            raise HTTPException(status_code=404, detail="not found")
     er = ExternalRef(
         ref_type=payload.ref_type,
         ref_id=payload.ref_id,
@@ -69,6 +81,13 @@ def by_external_ref(
         .first()
     )
     if not img or not v:
+        raise HTTPException(status_code=404, detail="not found")
+
+    # The resolved version MUST belong to the ref's image; caller_owns and the
+    # tenant gate above are computed from er.image_id, so a stored ref whose
+    # version_id points at a different image would leak that other image's
+    # bytes. Mirror serve_routes' image/version binding check. 404, no oracle.
+    if v.image_id != er.image_id:
         raise HTTPException(status_code=404, detail="not found")
 
     # Never presign a non-public version the caller cannot view; 404 so a

@@ -374,10 +374,11 @@ class TestExposeSafeAlt:
 
 
 class TestExternalRefs:
-    def test_create_and_lookup(self, client, auth_headers, db_session):
+    def test_create_and_lookup(self, client, auth_headers, db_session, link_image_to_user):
         img = Image(sha256="d1" * 32, bytes=100, mime="image/jpeg", storage_key="k/d1")
         db_session.add(img)
         db_session.flush()
+        link_image_to_user(img.id)
         v = ImageVersion(
             image_id=img.id,
             version_no=1,
@@ -487,6 +488,178 @@ class TestExternalRefs:
         assert r.status_code == 404
         assert "url" not in r.json()
 
+    def test_create_ref_unowned_image_404(self, client, auth_headers, db_session):
+        """create_external_ref for an image the caller does not own must 404 --
+        otherwise an attacker registers a ref against a victim's image."""
+        img = Image(sha256="f1" * 32, bytes=100, mime="image/jpeg", storage_key="k/f1")
+        db_session.add(img)
+        db_session.flush()
+        v = ImageVersion(
+            image_id=img.id,
+            version_no=1,
+            transform_spec={},
+            mime="image/jpeg",
+            width=200,
+            height=200,
+            bytes=100,
+            storage_key="k/f1",
+            visibility="private",
+            age_rating=0,
+        )
+        db_session.add(v)
+        db_session.commit()
+
+        r = client.post(
+            "/external/refs",
+            json={"ref_type": "post", "ref_id": "f1", "image_id": img.id, "version_id": v.id},
+            headers=auth_headers,
+        )
+        assert r.status_code == 404
+        # No ref was persisted.
+        assert (
+            db_session.execute(select(ExternalRef).where(ExternalRef.ref_id == "f1"))
+            .scalar_one_or_none()
+            is None
+        )
+
+    def test_create_ref_version_mismatch_404(
+        self, client, auth_headers, db_session, link_image_to_user
+    ):
+        """A version_id whose image_id != the ref's image_id must 404 even when
+        the caller owns the ref image -- that decoupling is the read-side IDOR
+        vector (ref image A, version V of victim's B)."""
+        img_a = Image(sha256="f2" * 32, bytes=100, mime="image/jpeg", storage_key="k/f2")
+        img_b = Image(sha256="f3" * 32, bytes=100, mime="image/jpeg", storage_key="k/f3")
+        db_session.add_all([img_a, img_b])
+        db_session.flush()
+        link_image_to_user(img_a.id)  # caller owns A only
+        v_a = ImageVersion(
+            image_id=img_a.id,
+            version_no=1,
+            transform_spec={},
+            mime="image/jpeg",
+            width=200,
+            height=200,
+            bytes=100,
+            storage_key="k/f2",
+            visibility="private",
+            age_rating=0,
+        )
+        v_b = ImageVersion(
+            image_id=img_b.id,
+            version_no=1,
+            transform_spec={},
+            mime="image/jpeg",
+            width=200,
+            height=200,
+            bytes=100,
+            storage_key="k/f3",
+            visibility="private",
+            age_rating=0,
+        )
+        db_session.add_all([v_a, v_b])
+        db_session.commit()
+
+        r = client.post(
+            "/external/refs",
+            json={"ref_type": "post", "ref_id": "f2", "image_id": img_a.id, "version_id": v_b.id},
+            headers=auth_headers,
+        )
+        assert r.status_code == 404
+        assert (
+            db_session.execute(select(ExternalRef).where(ExternalRef.ref_id == "f2"))
+            .scalar_one_or_none()
+            is None
+        )
+
+    def test_stored_mismatched_ref_lookup_404_no_url(
+        self, client, auth_headers, db_session, link_image_to_user
+    ):
+        """Defence in depth on the READ side: a ref whose stored version_id
+        belongs to a different image than image_id must 404 and leak no
+        presigned URL, even for a caller who owns the ref's image."""
+        img_a = Image(sha256="f4" * 32, bytes=100, mime="image/jpeg", storage_key="k/f4")
+        img_b = Image(sha256="f5" * 32, bytes=100, mime="image/jpeg", storage_key="k/f5")
+        db_session.add_all([img_a, img_b])
+        db_session.flush()
+        link_image_to_user(img_a.id)  # caller owns A
+        v_a = ImageVersion(
+            image_id=img_a.id,
+            version_no=1,
+            transform_spec={},
+            mime="image/jpeg",
+            width=200,
+            height=200,
+            bytes=100,
+            storage_key="k/f4",
+            visibility="private",
+            age_rating=0,
+        )
+        v_b = ImageVersion(
+            image_id=img_b.id,
+            version_no=1,
+            transform_spec={},
+            mime="image/jpeg",
+            width=200,
+            height=200,
+            bytes=100,
+            storage_key="k/f5",
+            visibility="private",
+            age_rating=0,
+        )
+        db_session.add_all([v_a, v_b])
+        db_session.flush()
+        # Ref points at image A but version B -- construct directly, bypassing
+        # the create-side guard, to prove the read side is independently safe.
+        er = ExternalRef(
+            ref_type="post", ref_id="f4", image_id=img_a.id, version_id=v_b.id, tenant_id=None
+        )
+        db_session.add(er)
+        db_session.commit()
+
+        r = client.get(
+            "/external/assets/by-external-ref?ref_type=post&ref_id=f4",
+            headers=auth_headers,
+        )
+        assert r.status_code == 404
+        assert "url" not in r.json()
+
+    def test_owned_ref_resolves(self, client, auth_headers, db_session, link_image_to_user):
+        """A legit owned ref still resolves to a presigned URL through the
+        create+read endpoints."""
+        img = Image(sha256="f6" * 32, bytes=100, mime="image/jpeg", storage_key="k/f6")
+        db_session.add(img)
+        db_session.flush()
+        link_image_to_user(img.id)
+        v = ImageVersion(
+            image_id=img.id,
+            version_no=1,
+            transform_spec={},
+            mime="image/jpeg",
+            width=200,
+            height=200,
+            bytes=100,
+            storage_key="k/f6",
+            visibility="private",
+            age_rating=0,
+        )
+        db_session.add(v)
+        db_session.commit()
+
+        r = client.post(
+            "/external/refs",
+            json={"ref_type": "post", "ref_id": "f6", "image_id": img.id, "version_id": v.id},
+            headers=auth_headers,
+        )
+        assert r.status_code == 200
+
+        r = client.get(
+            "/external/assets/by-external-ref?ref_type=post&ref_id=f6",
+            headers=auth_headers,
+        )
+        assert r.status_code == 200
+        assert r.json()["url"]
+
     def test_lookup_missing_ref_404(self, client, auth_headers):
         r = client.get(
             "/external/assets/by-external-ref?ref_type=nope&ref_id=nope",
@@ -494,10 +667,13 @@ class TestExternalRefs:
         )
         assert r.status_code == 404
 
-    def test_create_ref_without_version(self, client, auth_headers, db_session):
+    def test_create_ref_without_version(
+        self, client, auth_headers, db_session, link_image_to_user
+    ):
         img = Image(sha256="d2" * 32, bytes=100, mime="image/jpeg", storage_key="k/d2")
         db_session.add(img)
         db_session.flush()
+        link_image_to_user(img.id)
         v = ImageVersion(
             image_id=img.id,
             version_no=1,

@@ -245,9 +245,13 @@ class TestCreateExternalRefValidation:
         )
         assert r.status_code == 422
 
-    def test_valid_create_response_shape(self, client, auth_headers, db_session):
+    def test_valid_create_response_shape(
+        self, client, auth_headers, db_session, link_image_to_user
+    ):
         img = Image(sha256="c" * 64, bytes=50, mime="image/jpeg", storage_key="k/ext")
         db_session.add(img)
+        db_session.flush()
+        link_image_to_user(img.id)
         db_session.commit()
         r = client.post(
             "/external/refs",
