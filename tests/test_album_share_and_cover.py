@@ -1,8 +1,7 @@
 """Tests for album CRUD, sharing, cover generation, and access control."""
 
-from sqlalchemy import select
-
 from app.models import Album, AlbumItem, Image
+from sqlalchemy import select
 
 _USER_ID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
 _TENANT_ID = "11111111-2222-3333-4444-555555555555"
@@ -57,9 +56,7 @@ class TestAlbumAccessControl:
 
         assert client.get(f"/albums/{album.id}", headers=auth_headers).status_code == 404
         assert (
-            client.put(
-                f"/albums/{album.id}", json={"title": "x"}, headers=auth_headers
-            ).status_code
+            client.put(f"/albums/{album.id}", json={"title": "x"}, headers=auth_headers).status_code
             == 404
         )
         assert (

@@ -1,6 +1,7 @@
 """Tests for search endpoints and tag management."""
 
-from app.models import Album, Image, Tag
+from app.models import Album, AlbumTag, Image, ImageTag, Tag
+from sqlalchemy import select
 
 _TENANT_ID = "11111111-2222-3333-4444-555555555555"
 
@@ -76,23 +77,15 @@ class TestTagImage:
 
     def test_tag_image_not_owned_404(self, client, auth_headers, db_session):
         # Tagging an image without a UserImageLink must 404 and write nothing.
-        from sqlalchemy import select
-
-        from app.models import ImageTag
-
         img = Image(sha256="ab" * 32, bytes=50, mime="image/jpeg", storage_key="k/ab")
         tag = Tag(name="notyours", scope="global")
         db_session.add_all([img, tag])
         db_session.commit()
 
-        r = client.post(
-            f"/tags/images/{img.id}", json={"tag_ids": [tag.id]}, headers=auth_headers
-        )
+        r = client.post(f"/tags/images/{img.id}", json={"tag_ids": [tag.id]}, headers=auth_headers)
         assert r.status_code == 404
         rows = (
-            db_session.execute(select(ImageTag).where(ImageTag.image_id == img.id))
-            .scalars()
-            .all()
+            db_session.execute(select(ImageTag).where(ImageTag.image_id == img.id)).scalars().all()
         )
         assert rows == []
 
@@ -127,10 +120,6 @@ class TestTagAlbum:
     def test_tag_album_not_owned_404(self, client, auth_headers, db_session):
         # A null-tenant album with no owner must not be taggable by an
         # unrelated caller; nothing may be written.
-        from sqlalchemy import select
-
-        from app.models import AlbumTag
-
         album = Album(title="Orphan Album", tenant_id=None, owner_user_id=None)
         tag = Tag(name="orphan-tag", scope="global")
         db_session.add_all([album, tag])

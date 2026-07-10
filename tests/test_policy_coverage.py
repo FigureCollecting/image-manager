@@ -85,14 +85,20 @@ class TestCanViewVersionAgeGating:
     def test_share_threshold_gates(self) -> None:
         ctx = AuthCtx(subject="u1", tenant_id=None, is_service=False, scopes=[])
         # share_threshold=3, age=3 → 3 > 3 is False → allowed
-        assert can_view_version(ctx, "private", None, 3, share_threshold=3, caller_owns=True) is True
+        assert (
+            can_view_version(ctx, "private", None, 3, share_threshold=3, caller_owns=True) is True
+        )
         # share_threshold=2, age=3 → 3 > 2 → denied
-        assert can_view_version(ctx, "private", None, 3, share_threshold=2, caller_owns=True) is False
+        assert (
+            can_view_version(ctx, "private", None, 3, share_threshold=2, caller_owns=True) is False
+        )
 
     def test_safe_mode_and_share_threshold_uses_max(self) -> None:
         ctx = AuthCtx(subject="u1", tenant_id=None, is_service=False, scopes=[], safe_mode=True)
         # safe_mode threshold=1, share_threshold=3 → max=3, age=3 → allowed
-        assert can_view_version(ctx, "private", None, 3, share_threshold=3, caller_owns=True) is True
+        assert (
+            can_view_version(ctx, "private", None, 3, share_threshold=3, caller_owns=True) is True
+        )
         # safe_mode threshold=1, share_threshold=3 → max=3, age=4 → denied
         assert (
             can_view_version(ctx, "private", None, 4, share_threshold=3, caller_owns=True) is False

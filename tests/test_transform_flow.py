@@ -1,6 +1,7 @@
 """Tests for image version creation, visibility, safe-alt, and external refs."""
 
-from app.models import Image, ImageVersion
+from app.models import ExternalRef, Image, ImageVersion
+from sqlalchemy import select
 
 
 class TestCreateVersion:
@@ -70,8 +71,6 @@ class TestCreateVersion:
         """base_version_id pointing at another owner's image must 404 --
         otherwise a caller could launder someone else's bytes into an image
         they own."""
-        from sqlalchemy import select
-
         img_a = Image(sha256="a4" * 32, bytes=100, mime="image/jpeg", storage_key="k/a4")
         img_b = Image(sha256="a5" * 32, bytes=100, mime="image/jpeg", storage_key="k/a5")
         db_session.add_all([img_a, img_b])
@@ -300,8 +299,6 @@ class TestExternalRefs:
         assert "url" in data
 
     def _make_ref(self, db_session, *, sha_seed, key, ref_id, visibility, tenant_id=None):
-        from app.models import ExternalRef
-
         img = Image(sha256=sha_seed * 32, bytes=100, mime="image/jpeg", storage_key=key)
         db_session.add(img)
         db_session.flush()
@@ -329,9 +326,7 @@ class TestExternalRefs:
     def test_null_tenant_ref_unowned_image_404(self, client, auth_headers, db_session):
         """A null-tenant ref must NOT fail open: without a UserImageLink the
         caller gets 404 and no presigned URL."""
-        self._make_ref(
-            db_session, sha_seed="e1", key="k/e1", ref_id="nt-1", visibility="private"
-        )
+        self._make_ref(db_session, sha_seed="e1", key="k/e1", ref_id="nt-1", visibility="private")
 
         r = client.get(
             "/external/assets/by-external-ref?ref_type=post&ref_id=nt-1",
