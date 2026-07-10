@@ -62,6 +62,12 @@ def presign_get(key: str, *, expires_in: int | None = None) -> str:
 
 
 def move_object(src_key: str, dest_key: str) -> None:
+    # A self-move would copy the object onto itself and then DELETE it,
+    # destroying the only copy (final keys are content-addressed -- there is
+    # no second copy to fall back on). Nothing to do: the bytes are already
+    # at their destination.
+    if src_key == dest_key:
+        return
     s = get_settings()
     client = get_s3()
     client.copy({"Bucket": s.s3_bucket, "Key": src_key}, s.s3_bucket, dest_key)

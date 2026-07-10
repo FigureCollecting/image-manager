@@ -219,6 +219,64 @@ class TestVerifyAndRegisterObject:
         assert len(versions) == 1
 
 
+class TestMoveObjectSelfMoveGuard:
+    """move_object copies then deletes the source. If src == dest that
+    sequence would delete the ONLY copy of the bytes -- the content-addressed
+    final key is the live object. A self-move must be a no-op. Defense in
+    depth behind the staging-namespace binding in complete_upload: even if a
+    key equal to the final key ever reaches the worker again, it must not be
+    able to destroy the stored bytes."""
+
+    def test_self_move_is_noop(self) -> None:
+        from app.s3 import move_object
+
+        mock_client = MagicMock()
+        with patch("app.s3.get_s3", return_value=mock_client):
+            move_object("ab/cd/abcd.png", "ab/cd/abcd.png")
+        mock_client.copy.assert_not_called()
+        mock_client.delete_object.assert_not_called()
+
+    def test_distinct_keys_still_copy_then_delete(self) -> None:
+        from app.s3 import move_object
+
+        mock_client = MagicMock()
+        with patch("app.s3.get_s3", return_value=mock_client):
+            move_object("uploads/u/stage.png", "ab/cd/abcd.png")
+        mock_client.copy.assert_called_once()
+        mock_client.delete_object.assert_called_once()
+
+    def test_verify_with_key_already_final_does_not_delete_bytes(
+        self, db_session: Session
+    ) -> None:
+        """verify_and_register_object with a staging key that already equals
+        the content-addressed final key (real move_object, mocked client):
+        the object must survive -- no delete, storage_key unchanged."""
+        data = _make_image_bytes(16, 16)
+        from app.hashing import sha256_bytes
+
+        sha = sha256_bytes(data)
+        final = _final_key(sha, "png")
+
+        img = ImageModel(sha256=sha, storage_key=final)
+        db_session.add(img)
+        db_session.flush()
+
+        mock_body = MagicMock()
+        mock_body.read.return_value = data
+        mock_s3 = MagicMock()
+        mock_s3.get_object.return_value = {"Body": mock_body, "ContentType": "image/png"}
+
+        with (
+            patch("app.workers.tasks.get_s3", return_value=mock_s3),
+            patch("app.s3.get_s3", return_value=mock_s3),
+            patch("app.workers.tasks.worker_session", _fake_worker_session(db_session)),
+        ):
+            verify_and_register_object(img.id, "images", final, sha)
+
+        mock_s3.delete_object.assert_not_called()
+        assert img.storage_key == final
+
+
 class TestApplyTransforms:
     def test_resize_width_and_height(self) -> None:
         data = _make_image_bytes(64, 64)
