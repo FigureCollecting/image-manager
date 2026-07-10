@@ -3,17 +3,26 @@ from __future__ import annotations
 import io
 import logging
 import mimetypes
+import uuid
+from typing import TYPE_CHECKING
 
 import httpx
+import numpy as np
 from PIL import Image
 from sqlalchemy import select
 
 from ..db import worker_session
-from ..hashing import compute_phash, get_image_dimensions, sha256_bytes
+from ..hashing import compute_phash, detect_mime, get_image_dimensions, sha256_bytes
 from ..models import AlbumItem, FigureGallery, ImageVersion, UserImageLink
 from ..models import Image as ImageModel
 from ..s3 import get_s3, move_object
 from . import celery_app
+from .derivatives import compute_dominant_color, compute_thumbhash
+from .grounding import compute_bottom_margin_frac, compute_contact_band
+from .watermark import apply_watermark, strip_exif
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
@@ -337,6 +346,7 @@ def ingest_gallery_images(*, figure_id: str, images: list[dict]) -> None:
 
             data = resp.content
             sha = sha256_bytes(data)
+            source = "mfc"
 
             # Content-addressable dedup: check if Image with this hash exists
             existing_img = db.execute(
@@ -346,8 +356,12 @@ def ingest_gallery_images(*, figure_id: str, images: list[dict]) -> None:
             if existing_img:
                 image_id = existing_img.id
             else:
-                # Upload to S3 and create Image record
-                mime = "image/jpeg"
+                # Upload to S3 and create Image record. detect_mime sniffs
+                # the real bytes rather than assuming one -- a wrong
+                # assumption here mislabels the storage-key extension and,
+                # further downstream, whether the source already carries an
+                # alpha channel.
+                mime = detect_mime(data)
                 ext = _ext_for_mime(mime)
                 storage_key = _final_key(sha, ext)
 
@@ -375,6 +389,32 @@ def ingest_gallery_images(*, figure_id: str, images: list[dict]) -> None:
                 db.flush()
                 image_id = new_img.id
 
+                v1 = ImageVersion(
+                    image_id=image_id,
+                    version_no=1,
+                    transform_spec={},
+                    mime=mime,
+                    width=width,
+                    height=height,
+                    bytes=len(data),
+                    storage_key=storage_key,
+                    visibility="private",
+                    age_rating=0,
+                )
+                db.add(v1)
+                db.flush()
+
+                # Best-effort matted derivative -- see _create_matted_derivative.
+                _create_matted_derivative(
+                    db=db,
+                    s3=s3,
+                    settings=settings,
+                    image_id=image_id,
+                    source_version_no=v1.version_no,
+                    source_data=data,
+                    family=source,
+                )
+
             # Create FigureGallery record
             gallery_entry = FigureGallery(
                 figure_id=figure_id,
@@ -382,8 +422,92 @@ def ingest_gallery_images(*, figure_id: str, images: list[dict]) -> None:
                 image_id=image_id,
                 position=position,
                 caption=caption,
-                source="mfc",
+                source=source,
             )
             db.add(gallery_entry)
 
         db.flush()
+
+
+def _create_matted_derivative(
+    *,
+    db: Session,
+    s3,
+    settings,
+    image_id: int,
+    source_version_no: int,
+    source_data: bytes,
+    family: str,
+) -> ImageVersion | None:
+    """Best-effort: produce a matted (background-removed) derivative of a
+    freshly-ingested gallery source image as a new public ImageVersion, with
+    watermark + EXIF-strip + grounding scalars (bottom-margin, contact
+    band) + thumbhash + dominant_color populated.
+
+    Grounding scalars, thumbhash, and dominant_color are all measured on
+    the matted-but-NOT-YET-watermarked RGBA bytes -- the watermark is drawn
+    in the bottom-right corner, exactly where the grounding scan looks, so
+    compositing it in first would corrupt the measurement. The watermark is
+    layered on only for the final stored/served bytes.
+
+    Never raises: a matting failure on one gallery image must not abort
+    the whole ingest run.
+    """
+    try:
+        matted_bytes, _mime, _w, _h = _apply_transforms(
+            source_data, {"matte": True, "format": "PNG"}
+        )
+        matted_img = Image.open(io.BytesIO(matted_bytes)).convert("RGBA")
+        matted_img = strip_exif(matted_img)
+
+        content_out = io.BytesIO()
+        matted_img.save(content_out, format="PNG")
+        content_bytes = content_out.getvalue()
+
+        rgba_arr = np.asarray(matted_img)
+        bottom_margin_frac = compute_bottom_margin_frac(rgba_arr)
+        contact_band = compute_contact_band(rgba_arr)
+        center_x_frac, width_frac = contact_band if contact_band else (None, None)
+
+        thumbhash = compute_thumbhash(content_bytes)
+        dominant_color = compute_dominant_color(content_bytes)
+
+        watermarked_img = apply_watermark(matted_img, family=family)
+        final_out = io.BytesIO()
+        watermarked_img.save(final_out, format="PNG")
+        final_bytes = final_out.getvalue()
+
+        dest_key = f"versions/{image_id}/v2-matte-{uuid.uuid4().hex[:8]}.png"
+        s3.put_object(
+            Bucket=settings.s3_bucket,
+            Key=dest_key,
+            Body=final_bytes,
+            ContentType="image/png",
+            ACL="private",
+        )
+
+        v2 = ImageVersion(
+            image_id=image_id,
+            version_no=source_version_no + 1,
+            derived_from_version=source_version_no,
+            transform_spec={"matte": True, "format": "PNG", "watermark_family": family},
+            mime="image/png",
+            width=watermarked_img.width,
+            height=watermarked_img.height,
+            bytes=len(final_bytes),
+            storage_key=dest_key,
+            visibility="public",
+            age_rating=0,
+            matted=True,
+            bottom_margin_frac=bottom_margin_frac,
+            contact_band_center_x_frac=center_x_frac,
+            contact_band_width_frac=width_frac,
+            thumbhash=thumbhash,
+            dominant_color=dominant_color,
+        )
+        db.add(v2)
+        db.flush()
+        return v2
+    except Exception:
+        logger.warning("matte_derivative_failed", extra={"image_id": image_id})
+        return None
