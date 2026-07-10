@@ -5,7 +5,7 @@ SQLite tests exercise the ILIKE fallback; tsvector is PostgreSQL-only.
 """
 
 from app.models import Album, Image
-from app.search import is_postgres, build_text_filter
+from app.search import build_text_filter, is_postgres
 
 
 class TestSearchHelper:

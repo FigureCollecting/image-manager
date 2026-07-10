@@ -1,6 +1,6 @@
 """Tests for image version creation, visibility, safe-alt, and external refs."""
 
-from app.models import ExternalRef, Image, ImageVersion
+from app.models import Image, ImageVersion
 
 
 class TestCreateVersion:

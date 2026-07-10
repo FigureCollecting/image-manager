@@ -172,6 +172,6 @@ def delete_album(
     album = db.get(Album, album_id)
     if not album or album.deleted_at is not None:
         raise HTTPException(status_code=404, detail="not found")
-    album.deleted_at = dt.datetime.now(dt.timezone.utc)
+    album.deleted_at = dt.datetime.now(dt.UTC)
     db.commit()
     return OkResponse(ok=True)

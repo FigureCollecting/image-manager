@@ -5,8 +5,7 @@ After wiring Pydantic models, they should all pass.
 """
 from __future__ import annotations
 
-from app.models import Album, ExternalRef, Image, ImageVersion
-
+from app.models import Album, Image
 
 # ---------------------------------------------------------------------------
 # Image routes — validation

@@ -3,15 +3,14 @@ from __future__ import annotations
 import io
 import logging
 import mimetypes
-from typing import Optional
 
 from PIL import Image
 from sqlalchemy import select
 
 from ..db import worker_session
 from ..hashing import compute_phash, get_image_dimensions, sha256_bytes
-from ..models import AlbumItem, Image as ImageModel
-from ..models import ImageVersion, UserImageLink
+from ..models import AlbumItem, ImageVersion, UserImageLink
+from ..models import Image as ImageModel
 from ..s3 import get_s3, move_object
 from . import celery_app
 

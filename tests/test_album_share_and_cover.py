@@ -1,6 +1,6 @@
 """Tests for album CRUD, sharing, and cover generation."""
 
-from app.models import Album, AlbumItem, Image, ImageVersion
+from app.models import Album, Image
 
 
 class TestAlbumCRUD:

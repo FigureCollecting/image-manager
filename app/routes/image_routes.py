@@ -266,7 +266,7 @@ def delete_image(
     img = db.get(Image, image_id)
     if not img or img.deleted_at is not None:
         raise HTTPException(status_code=404, detail="not found")
-    img.deleted_at = dt.datetime.now(dt.timezone.utc)
+    img.deleted_at = dt.datetime.now(dt.UTC)
     db.commit()
     return OkResponse(ok=True)
 
@@ -281,6 +281,6 @@ def delete_version(
     v = db.get(ImageVersion, version_id)
     if not v or v.image_id != image_id or v.deleted_at is not None:
         raise HTTPException(status_code=404, detail="not found")
-    v.deleted_at = dt.datetime.now(dt.timezone.utc)
+    v.deleted_at = dt.datetime.now(dt.UTC)
     db.commit()
     return OkResponse(ok=True)

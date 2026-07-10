@@ -1,19 +1,18 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
 
 @dataclass
 class AuthCtx:
     subject: str
-    tenant_id: Optional[str]
+    tenant_id: str | None
     is_service: bool
     scopes: list[str]
     safe_mode: bool = False
 
 
-def can_view_version(ctx: AuthCtx | None, version_visibility: str, owner_tenant_id: Optional[str], version_age: int, share_threshold: Optional[int] = None) -> bool:
+def can_view_version(ctx: AuthCtx | None, version_visibility: str, owner_tenant_id: str | None, version_age: int, share_threshold: int | None = None) -> bool:
     # Public visible to anyone
     if version_visibility == "public":
         return True
@@ -34,7 +33,5 @@ def can_view_version(ctx: AuthCtx | None, version_visibility: str, owner_tenant_
         threshold = max(threshold, 1)
     if share_threshold is not None:
         threshold = max(threshold, share_threshold)
-    if version_age > threshold:
-        return False
-    return True
+    return version_age <= threshold
 

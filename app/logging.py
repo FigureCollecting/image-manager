@@ -2,12 +2,12 @@ import json
 import logging
 import sys
 import time
-from typing import Any, Dict
+from typing import Any
 
 
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:  # noqa: A003 - formatter API
-        base: Dict[str, Any] = {
+        base: dict[str, Any] = {
             "ts": int(time.time() * 1000),
             "level": record.levelname.lower(),
             "msg": record.getMessage(),

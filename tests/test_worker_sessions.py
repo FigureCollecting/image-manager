@@ -1,12 +1,10 @@
 """Tests for worker session management — proper context managers with rollback."""
 
 import inspect
-from unittest.mock import patch
-
-from sqlalchemy.orm import sessionmaker
 
 from app.db import worker_session
 from app.models import Image
+from sqlalchemy.orm import sessionmaker
 
 
 class TestWorkerSessionContextManager:
@@ -55,7 +53,7 @@ class TestWorkerSessionContextManager:
         factory = sessionmaker(bind=db_engine, autoflush=False, autocommit=False, expire_on_commit=False)
         raised = False
         try:
-            with worker_session(session_factory=factory) as db:
+            with worker_session(session_factory=factory):
                 raise RuntimeError("boom")
         except RuntimeError as e:
             assert str(e) == "boom"
