@@ -35,7 +35,9 @@ class TestCreateVersion:
         assert r.status_code == 200
         data = r.json()
         assert data["version_no"] == 2
-        assert "storage_key" in data
+        # Internal storage keys stay internal: clients address versions via
+        # /serve/{image_id}@{version_id}, never by raw object key.
+        assert "storage_key" not in data
 
     def test_create_version_explicit_base(
         self, client, auth_headers, db_session, link_image_to_user

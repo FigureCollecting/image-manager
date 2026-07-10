@@ -312,7 +312,7 @@ def create_version(
         alt_for_version_id=payload.create_safe_alt_for,
     )
     db.commit()
-    return CreateVersionResponse(version_id=version.id, version_no=new_no, storage_key=dest_key)
+    return CreateVersionResponse(version_id=version.id, version_no=new_no)
 
 
 @router.post("/{image_id}/versions/{version_id}/visibility", response_model=OkResponse)
