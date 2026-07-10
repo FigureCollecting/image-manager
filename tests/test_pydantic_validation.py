@@ -184,7 +184,12 @@ class TestShareAlbumValidation:
 
 class TestGetAlbumResponseShape:
     def test_album_detail_shape(self, client, auth_headers, db_session):
-        album = Album(title="My Album", description="desc", default_visibility="private")
+        album = Album(
+            title="My Album",
+            description="desc",
+            default_visibility="private",
+            tenant_id="11111111-2222-3333-4444-555555555555",
+        )
         db_session.add(album)
         db_session.commit()
 
