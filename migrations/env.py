@@ -4,18 +4,12 @@ import os
 from logging.config import fileConfig
 
 from alembic import context
-from sqlalchemy import engine_from_config, pool
-
 from app.models import Base
+from sqlalchemy import engine_from_config, pool
 
 # This is the Alembic Config object, which provides access to the values
 # within the .ini file in use.
 config = context.config
-
-if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
-
-target_metadata = Base.metadata
 
 
 def get_url() -> str:
@@ -24,6 +18,17 @@ def get_url() -> str:
         # fallback for local dev
         url = "postgresql+psycopg2://postgres:postgres@postgres:5432/image_manager"
     return url
+
+
+# alembic.ini deliberately has no sqlalchemy.url (see comment there); set it
+# here from the environment so it's available before fileConfig/get_section
+# ever read the [alembic] section, and before either run_migrations_* path.
+config.set_main_option("sqlalchemy.url", get_url())
+
+if config.config_file_name is not None:
+    fileConfig(config.config_file_name)
+
+target_metadata = Base.metadata
 
 
 def run_migrations_offline() -> None:
@@ -59,4 +64,3 @@ if context.is_offline_mode():
     run_migrations_offline()
 else:
     run_migrations_online()
-

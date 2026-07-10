@@ -44,7 +44,7 @@ def by_external_ref(
     er = db.execute(
         select(ExternalRef).where(ExternalRef.ref_type == ref_type, ExternalRef.ref_id == ref_id)
     ).scalar_one_or_none()
-    if not er:
+    if not er or (er.tenant_id and not ctx.is_service and er.tenant_id != ctx.tenant_id):
         raise HTTPException(status_code=404, detail="not found")
     img = db.get(Image, er.image_id)
     v = (

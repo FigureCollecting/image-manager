@@ -9,6 +9,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -16,6 +17,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    false,
 )
 from sqlalchemy.dialects.postgresql import CITEXT, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -68,6 +70,12 @@ class ImageVersion(Base):
         DateTime(timezone=True), default=lambda: dt.datetime.now(dt.UTC), nullable=False
     )
     deleted_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    matted: Mapped[bool] = mapped_column(Boolean, server_default=false(), nullable=False)
+    bottom_margin_frac: Mapped[float | None] = mapped_column(Float)
+    contact_band_center_x_frac: Mapped[float | None] = mapped_column(Float)
+    contact_band_width_frac: Mapped[float | None] = mapped_column(Float)
+    thumbhash: Mapped[str | None] = mapped_column(String(64))
+    dominant_color: Mapped[str | None] = mapped_column(String(32))
 
     __table_args__ = (
         UniqueConstraint("image_id", "version_no", name="uq_image_version_no"),
@@ -210,6 +218,32 @@ class ServiceClient(Base):
     name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
     secret_hash: Mapped[str] = mapped_column(String(200), nullable=False)
     scopes: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class FigureGallery(Base):
+    __tablename__ = "figure_galleries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    figure_id: Mapped[str] = mapped_column(String(200), nullable=False)
+    source_url: Mapped[str] = mapped_column(String(2048), nullable=False)
+    image_id: Mapped[int] = mapped_column(
+        ForeignKey("images.id", ondelete="CASCADE"), nullable=False
+    )
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    caption: Mapped[str | None] = mapped_column(Text)
+    source: Mapped[str] = mapped_column(String(50), nullable=False, default="mfc")
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: dt.datetime.now(dt.UTC), nullable=False
+    )
+    updated_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: dt.datetime.now(dt.UTC), nullable=False
+    )
+    deleted_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        UniqueConstraint("figure_id", "source_url", name="uq_figure_source_url"),
+        Index("ix_figure_galleries_figure_id", "figure_id"),
+    )
 
 
 # Useful indexes

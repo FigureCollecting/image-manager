@@ -15,12 +15,13 @@ class Settings(BaseSettings):
     app_name: str = "image-manager"
     environment: Literal["development", "production", "test"] = "development"
     log_level: str = "INFO"
-    allow_dev_tokens: bool = True
+    allow_dev_tokens: bool = False
 
     # Security
     jwt_secret: str = "dev-secret-change-me"
     jwt_algorithm: str = "HS256"
-    token_exp_minutes: int = 60 * 24
+    token_exp_minutes: int = 60
+    refresh_token_exp_minutes: int = 60 * 24 * 7
 
     # Data stores
     database_url: str = "postgresql+psycopg2://postgres:postgres@postgres:5432/image_manager"
@@ -36,10 +37,24 @@ class Settings(BaseSettings):
     s3_presign_expiry_post: int = 15 * 60
     s3_presign_expiry_get: int = 10 * 60
 
+    # CORS
+    cors_origins: list[str] = [
+        "http://localhost:3000",
+        "http://localhost:5051",
+        "https://figurecollecting.com",
+    ]
+
+    # Rate limiting
+    rate_limit_per_minute: int = 120
+
     # DB connection pool
     db_pool_size: int = 10
     db_max_overflow: int = 20
     db_pool_recycle: int = 1800  # 30 minutes
+
+    # Matting pipeline: "stub" (default, no model) or "birefnet" (deploy-time
+    # only -- see app.workers.matting.BiRefNetMattingBackend).
+    matting_backend: str = "stub"
 
 
 @lru_cache(maxsize=1)

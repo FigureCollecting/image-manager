@@ -22,7 +22,7 @@ def create_tag(
     db: Session = Depends(get_db),  # noqa: B008
     ctx: AuthCtx = Depends(require_auth_ctx),  # noqa: B008
 ) -> CreateTagResponse:
-    t = Tag(name=payload.name, scope=payload.scope, tenant_id=payload.tenant_id)
+    t = Tag(name=payload.name, scope=payload.scope, tenant_id=ctx.tenant_id)
     db.add(t)
     db.commit()
     return CreateTagResponse(id=t.id, name=t.name)

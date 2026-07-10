@@ -7,27 +7,35 @@ from app.models import Album, Image, ImageVersion
 
 
 class TestDeleteImage:
-    def test_delete_image(self, client, auth_headers, db_session):
+    def test_delete_image(self, client, auth_headers, db_session, link_image_to_user):
         img = Image(sha256="del1" * 16, bytes=100, mime="image/jpeg", storage_key="k/del1")
         db_session.add(img)
+        db_session.flush()
+        link_image_to_user(img.id)
         db_session.commit()
 
         r = client.delete(f"/images/{img.id}", headers=auth_headers)
         assert r.status_code == 200
         assert r.json()["ok"] is True
 
-    def test_deleted_image_not_in_get(self, client, auth_headers, db_session):
+    def test_deleted_image_not_in_get(self, client, auth_headers, db_session, link_image_to_user):
         img = Image(sha256="del2" * 16, bytes=100, mime="image/jpeg", storage_key="k/del2")
         db_session.add(img)
+        db_session.flush()
+        link_image_to_user(img.id)
         db_session.commit()
 
         client.delete(f"/images/{img.id}", headers=auth_headers)
         r = client.get(f"/images/{img.id}", headers=auth_headers)
         assert r.status_code == 404
 
-    def test_deleted_image_not_in_search(self, client, auth_headers, db_session):
+    def test_deleted_image_not_in_search(
+        self, client, auth_headers, db_session, link_image_to_user
+    ):
         img = Image(sha256="del3" * 16, bytes=100, mime="image/jpeg", storage_key="k/del3")
         db_session.add(img)
+        db_session.flush()
+        link_image_to_user(img.id)
         db_session.commit()
 
         client.delete(f"/images/{img.id}", headers=auth_headers)
@@ -39,10 +47,12 @@ class TestDeleteImage:
         r = client.delete("/images/99999", headers=auth_headers)
         assert r.status_code == 404
 
-    def test_delete_is_soft(self, client, auth_headers, db_session):
+    def test_delete_is_soft(self, client, auth_headers, db_session, link_image_to_user):
         """The record still exists in DB with deleted_at set."""
         img = Image(sha256="del4" * 16, bytes=100, mime="image/jpeg", storage_key="k/del4")
         db_session.add(img)
+        db_session.flush()
+        link_image_to_user(img.id)
         db_session.commit()
 
         client.delete(f"/images/{img.id}", headers=auth_headers)
@@ -87,10 +97,11 @@ class TestDeleteAlbum:
 
 
 class TestDeleteVersion:
-    def test_delete_version(self, client, auth_headers, db_session):
+    def test_delete_version(self, client, auth_headers, db_session, link_image_to_user):
         img = Image(sha256="dv1" * 22, bytes=100, mime="image/jpeg", storage_key="k/dv1")
         db_session.add(img)
         db_session.flush()
+        link_image_to_user(img.id)
         v = ImageVersion(
             image_id=img.id,
             version_no=1,
@@ -110,10 +121,13 @@ class TestDeleteVersion:
         assert r.status_code == 200
         assert r.json()["ok"] is True
 
-    def test_deleted_version_not_in_image_detail(self, client, auth_headers, db_session):
+    def test_deleted_version_not_in_image_detail(
+        self, client, auth_headers, db_session, link_image_to_user
+    ):
         img = Image(sha256="dv2" * 22, bytes=100, mime="image/jpeg", storage_key="k/dv2")
         db_session.add(img)
         db_session.flush()
+        link_image_to_user(img.id)
         v = ImageVersion(
             image_id=img.id,
             version_no=1,

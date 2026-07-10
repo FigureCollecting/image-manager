@@ -57,7 +57,7 @@ def update_album(
     ctx: AuthCtx = Depends(require_auth_ctx),  # noqa: B008
 ) -> OkResponse:
     album = db.get(Album, album_id)
-    if not album:
+    if not album or (album.tenant_id and album.tenant_id != ctx.tenant_id):
         raise HTTPException(status_code=404, detail="not found")
     update_data = payload.model_dump(exclude_unset=True)
     for k, v in update_data.items():
@@ -74,7 +74,7 @@ def add_item(
     ctx: AuthCtx = Depends(require_auth_ctx),  # noqa: B008
 ) -> AddAlbumItemResponse:
     album = db.get(Album, album_id)
-    if not album:
+    if not album or (album.tenant_id and album.tenant_id != ctx.tenant_id):
         raise HTTPException(status_code=404, detail="not found")
     position = payload.position
     if position is None:
@@ -98,6 +98,9 @@ def reorder(
     db: Session = Depends(get_db),  # noqa: B008
     ctx: AuthCtx = Depends(require_auth_ctx),  # noqa: B008
 ) -> OkResponse:
+    album = db.get(Album, album_id)
+    if not album or (album.tenant_id and album.tenant_id != ctx.tenant_id):
+        raise HTTPException(status_code=404, detail="not found")
     for it in payload.items:
         item = db.get(AlbumItem, {"album_id": album_id, "position": it.from_position})
         if item:
@@ -113,7 +116,11 @@ def get_album(
     ctx: AuthCtx = Depends(require_auth_ctx),  # noqa: B008
 ) -> AlbumDetailResponse:
     album = db.get(Album, album_id)
-    if not album or album.deleted_at is not None:
+    if (
+        not album
+        or album.deleted_at is not None
+        or (album.tenant_id and album.tenant_id != ctx.tenant_id)
+    ):
         raise HTTPException(status_code=404, detail="not found")
     items = (
         db.execute(
@@ -144,7 +151,7 @@ def share_album(
     ctx: AuthCtx = Depends(require_auth_ctx),  # noqa: B008
 ) -> ShareAlbumResponse:
     album = db.get(Album, album_id)
-    if not album:
+    if not album or (album.tenant_id and album.tenant_id != ctx.tenant_id):
         raise HTTPException(status_code=404, detail="not found")
     if payload.enable:
         token = secrets.token_urlsafe(16)
@@ -166,6 +173,9 @@ def album_cover(
     db: Session = Depends(get_db),  # noqa: B008
     ctx: AuthCtx = Depends(require_auth_ctx),  # noqa: B008
 ) -> AlbumCoverResponse:
+    album = db.get(Album, album_id)
+    if not album or (album.tenant_id and album.tenant_id != ctx.tenant_id):
+        raise HTTPException(status_code=404, detail="not found")
     key = enqueue_album_cover(album_id)
     return AlbumCoverResponse(storage_key=key)
 
@@ -177,7 +187,11 @@ def delete_album(
     ctx: AuthCtx = Depends(require_auth_ctx),  # noqa: B008
 ) -> OkResponse:
     album = db.get(Album, album_id)
-    if not album or album.deleted_at is not None:
+    if (
+        not album
+        or album.deleted_at is not None
+        or (album.tenant_id and album.tenant_id != ctx.tenant_id)
+    ):
         raise HTTPException(status_code=404, detail="not found")
     album.deleted_at = dt.datetime.now(dt.UTC)
     db.commit()

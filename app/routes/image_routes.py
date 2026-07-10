@@ -33,6 +33,20 @@ from ..workers.tasks import enqueue_transform
 router = APIRouter(prefix="/images", tags=["images"])
 
 
+def _check_image_ownership(db: Session, image_id: int, ctx: AuthCtx) -> None:
+    """Verify that a non-service caller has a UserImageLink for this image."""
+    if ctx.is_service:
+        return
+    link = db.execute(
+        select(UserImageLink).where(
+            UserImageLink.image_id == image_id,
+            UserImageLink.user_id == ctx.subject,
+        )
+    ).scalar_one_or_none()
+    if not link:
+        raise HTTPException(status_code=404, detail="not found")
+
+
 @router.post("/initiate-upload")
 def initiate_upload(
     payload: InitiateUploadRequest,
@@ -105,6 +119,7 @@ def get_image(
     img = db.get(Image, image_id)
     if not img or img.deleted_at is not None:
         raise HTTPException(status_code=404, detail="not found")
+    _check_image_ownership(db, image_id, ctx)
     versions = (
         db.execute(
             select(ImageVersion)
@@ -158,6 +173,7 @@ def create_version(
     db: Session = Depends(get_db),  # noqa: B008
     ctx: AuthCtx = Depends(require_auth_ctx),  # noqa: B008
 ) -> CreateVersionResponse:
+    _check_image_ownership(db, image_id, ctx)
     base: ImageVersion | None = None
     if payload.base_version_id:
         base = db.get(ImageVersion, payload.base_version_id)
@@ -228,6 +244,7 @@ def set_visibility(
     db: Session = Depends(get_db),  # noqa: B008
     ctx: AuthCtx = Depends(require_auth_ctx),  # noqa: B008
 ) -> OkResponse:
+    _check_image_ownership(db, image_id, ctx)
     v = db.get(ImageVersion, version_id)
     if not v or v.image_id != image_id:
         raise HTTPException(status_code=404, detail="not found")
@@ -246,6 +263,7 @@ def expose_safe_alt(
     db: Session = Depends(get_db),  # noqa: B008
     ctx: AuthCtx = Depends(require_auth_ctx),  # noqa: B008
 ) -> ExposeSafeAltResponse:
+    _check_image_ownership(db, image_id, ctx)
     v = db.get(ImageVersion, version_id)
     if not v or v.image_id != image_id:
         raise HTTPException(status_code=404, detail="not found")
@@ -294,6 +312,7 @@ def delete_image(
     img = db.get(Image, image_id)
     if not img or img.deleted_at is not None:
         raise HTTPException(status_code=404, detail="not found")
+    _check_image_ownership(db, image_id, ctx)
     img.deleted_at = dt.datetime.now(dt.UTC)
     db.commit()
     return OkResponse(ok=True)
@@ -306,6 +325,7 @@ def delete_version(
     db: Session = Depends(get_db),  # noqa: B008
     ctx: AuthCtx = Depends(require_auth_ctx),  # noqa: B008
 ) -> OkResponse:
+    _check_image_ownership(db, image_id, ctx)
     v = db.get(ImageVersion, version_id)
     if not v or v.image_id != image_id or v.deleted_at is not None:
         raise HTTPException(status_code=404, detail="not found")

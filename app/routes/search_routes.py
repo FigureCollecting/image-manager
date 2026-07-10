@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends
-from sqlalchemy import Select, select
+from sqlalchemy import Select, or_, select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..deps import require_auth_ctx
-from ..models import Album, AlbumTag, Image, ImageTag, Tag
+from ..models import Album, AlbumTag, Image, ImageTag, Tag, UserImageLink
 from ..policy import AuthCtx
 from ..schemas import (
     AlbumSearchResponse,
@@ -28,6 +28,10 @@ def search_images(
 ) -> ImageSearchResponse:
     limit = max(1, min(limit, 100))
     stmt: Select[tuple[Image]] = select(Image).where(Image.deleted_at.is_(None))
+    if not ctx.is_service:
+        stmt = stmt.join(UserImageLink, UserImageLink.image_id == Image.id).where(
+            UserImageLink.user_id == ctx.subject
+        )
     if query:
         stmt = stmt.where(build_text_filter(db, query, Image.mime, Image.storage_key))
     if tags:
@@ -62,6 +66,8 @@ def search_albums(
 ) -> AlbumSearchResponse:
     limit = max(1, min(limit, 100))
     stmt: Select[tuple[Album]] = select(Album).where(Album.deleted_at.is_(None))
+    if not ctx.is_service and ctx.tenant_id:
+        stmt = stmt.where(or_(Album.tenant_id.is_(None), Album.tenant_id == ctx.tenant_id))
     if query:
         stmt = stmt.where(build_text_filter(db, query, Album.title, Album.description))
     if tags:

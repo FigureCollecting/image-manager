@@ -1,13 +1,35 @@
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
+from ..config import get_settings
 from ..db import get_db
 from ..deps import get_auth_ctx
 from ..models import Image, ImageVersion
 from ..policy import AuthCtx, can_view_version
-from ..s3 import presign_get
+from ..s3 import get_s3
 
 router = APIRouter(tags=["serve"])
+
+
+def _stream_version(
+    version: ImageVersion, *, cache_control: str, etag: str, vary: str | None = None
+) -> Response:
+    """Byte-stream a version's bytes through the app rather than 302
+    redirecting to a presigned S3/MinIO URL. A presigned URL for the
+    internal minio:9000 host is not resolvable outside the Docker network
+    -- unreachable from a real browser. Streaming through the app trades a
+    (small, in-cluster) extra hop for actually working client-side.
+    """
+    settings = get_settings()
+    s3 = get_s3()
+    obj = s3.get_object(Bucket=settings.s3_bucket, Key=version.storage_key)
+    data: bytes = obj["Body"].read()
+    resp = Response(content=data, media_type=version.mime or "application/octet-stream")
+    resp.headers["Cache-Control"] = cache_control
+    resp.headers["ETag"] = etag
+    if vary:
+        resp.headers["Vary"] = vary
+    return resp
 
 
 @router.get("/serve/{image_id}@{version_id}")
@@ -15,12 +37,18 @@ def serve_version(
     image_id: int,
     version_id: int,
     mode: str | None = None,
-    db: Session = Depends(get_db),
-    ctx: AuthCtx | None = Depends(get_auth_ctx),
+    db: Session = Depends(get_db),  # noqa: B008
+    ctx: AuthCtx | None = Depends(get_auth_ctx),  # noqa: B008
 ) -> Response:
     img = db.get(Image, image_id)
     v = db.get(ImageVersion, version_id)
-    if not img or not v or v.image_id != img.id:
+    if (
+        not img
+        or not v
+        or v.image_id != img.id
+        or img.deleted_at is not None
+        or v.deleted_at is not None
+    ):
         raise HTTPException(status_code=404, detail="not found")
 
     # policy: private requires caller to have a link; tenant/public/catalog handled via can_view_version
@@ -38,25 +66,26 @@ def serve_version(
         else:
             raise HTTPException(status_code=403, detail="age-gated")
 
-    url = presign_get(target.storage_key)
-    resp = Response(status_code=302)
-    resp.headers["Location"] = url
-    resp.headers["Cache-Control"] = "private, max-age=600"
-    resp.headers["ETag"] = img.sha256
-    return resp
+    return _stream_version(
+        target, cache_control="private, max-age=600", etag=img.sha256, vary="X-Safe-Mode"
+    )
 
 
 @router.get("/public/{image_id}@{version_id}")
-def public_serve(image_id: int, version_id: int, db: Session = Depends(get_db)) -> Response:
+def public_serve(image_id: int, version_id: int, db: Session = Depends(get_db)) -> Response:  # noqa: B008
     img = db.get(Image, image_id)
     v = db.get(ImageVersion, version_id)
-    if not img or not v or v.image_id != img.id:
+    if (
+        not img
+        or not v
+        or v.image_id != img.id
+        or img.deleted_at is not None
+        or v.deleted_at is not None
+    ):
         raise HTTPException(status_code=404, detail="not found")
     if v.visibility != "public":
         raise HTTPException(status_code=403, detail="forbidden")
-    url = presign_get(v.storage_key)
-    resp = Response(status_code=302)
-    resp.headers["Location"] = url
-    resp.headers["Cache-Control"] = "public, max-age=600"
-    resp.headers["ETag"] = img.sha256
-    return resp
+    # (image_id, version_id) is a stable, content-addressed identifier --
+    # a version's bytes never change after creation -- so this is safe to
+    # cache aggressively at any layer (browser, CDN).
+    return _stream_version(v, cache_control="public, max-age=31536000, immutable", etag=img.sha256)
