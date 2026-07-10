@@ -13,7 +13,7 @@ from __future__ import annotations
 import datetime as dt
 from unittest.mock import MagicMock, patch
 
-from app.models import Image, ImageVersion
+from app.models import Image, ImageVersion, UserImageLink
 
 
 def _mock_s3(body: bytes) -> MagicMock:
@@ -24,24 +24,34 @@ def _mock_s3(body: bytes) -> MagicMock:
     return mock_s3
 
 
+def _make_private_version(db_session, sha_seed: str, key: str) -> tuple[Image, ImageVersion]:
+    img = Image(sha256=sha_seed * 32, bytes=100, mime="image/jpeg", storage_key=key)
+    db_session.add(img)
+    db_session.flush()
+    v = ImageVersion(
+        image_id=img.id,
+        version_no=1,
+        transform_spec={},
+        mime="image/jpeg",
+        width=100,
+        height=100,
+        bytes=100,
+        storage_key=key,
+        visibility="private",
+        age_rating=0,
+    )
+    db_session.add(v)
+    db_session.commit()
+    return img, v
+
+
 class TestServeVersion:
-    def test_serve_private_with_auth_streams_bytes(self, client, auth_headers, db_session):
-        img = Image(sha256="s1" * 32, bytes=100, mime="image/jpeg", storage_key="k/s1")
-        db_session.add(img)
-        db_session.flush()
-        v = ImageVersion(
-            image_id=img.id,
-            version_no=1,
-            transform_spec={},
-            mime="image/jpeg",
-            width=100,
-            height=100,
-            bytes=100,
-            storage_key="k/s1",
-            visibility="private",
-            age_rating=0,
-        )
-        db_session.add(v)
+    def test_serve_private_owner_streams_bytes(
+        self, client, auth_headers, db_session, link_image_to_user
+    ):
+        # The OWNER (has a UserImageLink) may stream a private version.
+        img, v = _make_private_version(db_session, "s1", "k/s1")
+        link_image_to_user(img.id)
         db_session.commit()
 
         with patch("app.routes.serve_routes.get_s3", return_value=_mock_s3(b"fake-jpeg-bytes")):
@@ -52,6 +62,70 @@ class TestServeVersion:
         assert r.headers.get("content-type") == "image/jpeg"
         # No redirect to an internal-only host -- the app served the bytes itself.
         assert "location" not in r.headers
+
+    def test_serve_private_authenticated_non_owner_404(self, client, auth_headers, db_session):
+        # An authenticated caller with NO UserImageLink must get 404 --
+        # indistinguishable from a nonexistent image (no enumeration oracle).
+        img, v = _make_private_version(db_session, "n1", "k/n1")
+        # Link belongs to a DIFFERENT user; the auth_headers user owns nothing.
+        db_session.add(
+            UserImageLink(
+                user_id="99999999-8888-7777-6666-555555555555",
+                tenant_id="11111111-2222-3333-4444-555555555555",
+                image_id=img.id,
+                role="owner",
+            )
+        )
+        db_session.commit()
+
+        with patch("app.routes.serve_routes.get_s3", return_value=_mock_s3(b"secret")):
+            r = client.get(f"/serve/{img.id}@{v.id}", headers=auth_headers, follow_redirects=False)
+        assert r.status_code == 404
+        assert b"secret" not in r.content
+
+    def test_serve_private_unauthenticated_404(self, client, db_session):
+        img, v = _make_private_version(db_session, "n2", "k/n2")
+
+        with patch("app.routes.serve_routes.get_s3", return_value=_mock_s3(b"secret")):
+            r = client.get(f"/serve/{img.id}@{v.id}", follow_redirects=False)
+        assert r.status_code == 404
+        assert b"secret" not in r.content
+
+    def test_serve_private_service_token_streams(self, client, service_headers, db_session):
+        # Service tokens are trusted for everything -- no UserImageLink needed.
+        img, v = _make_private_version(db_session, "n3", "k/n3")
+
+        with patch("app.routes.serve_routes.get_s3", return_value=_mock_s3(b"svc-bytes")):
+            r = client.get(
+                f"/serve/{img.id}@{v.id}", headers=service_headers, follow_redirects=False
+            )
+        assert r.status_code == 200
+        assert r.content == b"svc-bytes"
+
+    def test_serve_public_anonymous_200(self, client, db_session):
+        # Public versions stay served to anonymous callers via /serve.
+        img = Image(sha256="n4" * 32, bytes=100, mime="image/jpeg", storage_key="k/n4")
+        db_session.add(img)
+        db_session.flush()
+        v = ImageVersion(
+            image_id=img.id,
+            version_no=1,
+            transform_spec={},
+            mime="image/jpeg",
+            width=100,
+            height=100,
+            bytes=100,
+            storage_key="k/n4",
+            visibility="public",
+            age_rating=0,
+        )
+        db_session.add(v)
+        db_session.commit()
+
+        with patch("app.routes.serve_routes.get_s3", return_value=_mock_s3(b"pub-bytes")):
+            r = client.get(f"/serve/{img.id}@{v.id}", follow_redirects=False)
+        assert r.status_code == 200
+        assert r.content == b"pub-bytes"
 
     def test_serve_missing_404(self, client, auth_headers):
         r = client.get("/serve/99999@99999", headers=auth_headers, follow_redirects=False)
@@ -170,23 +244,9 @@ class TestPublicServe:
 
 
 class TestVisibilityEnforcement:
-    def test_serve_sets_cache_headers(self, client, auth_headers, db_session):
-        img = Image(sha256="v1" * 32, bytes=100, mime="image/jpeg", storage_key="k/v1")
-        db_session.add(img)
-        db_session.flush()
-        v = ImageVersion(
-            image_id=img.id,
-            version_no=1,
-            transform_spec={},
-            mime="image/jpeg",
-            width=100,
-            height=100,
-            bytes=100,
-            storage_key="k/v1",
-            visibility="private",
-            age_rating=0,
-        )
-        db_session.add(v)
+    def test_serve_sets_cache_headers(self, client, auth_headers, db_session, link_image_to_user):
+        img, v = _make_private_version(db_session, "v1", "k/v1")
+        link_image_to_user(img.id)
         db_session.commit()
 
         with patch("app.routes.serve_routes.get_s3", return_value=_mock_s3(b"data")):
@@ -249,23 +309,11 @@ class TestSoftDeleteAndCacheVariance:
             r = client.get(f"/public/{img.id}@{v.id}", follow_redirects=False)
         assert r.status_code == 404
 
-    def test_serve_varies_on_safe_mode_header(self, client, auth_headers, db_session):
-        img = Image(sha256="d3" * 32, bytes=100, mime="image/jpeg", storage_key="k/d3")
-        db_session.add(img)
-        db_session.flush()
-        v = ImageVersion(
-            image_id=img.id,
-            version_no=1,
-            transform_spec={},
-            mime="image/jpeg",
-            width=100,
-            height=100,
-            bytes=100,
-            storage_key="k/d3",
-            visibility="private",
-            age_rating=0,
-        )
-        db_session.add(v)
+    def test_serve_varies_on_safe_mode_header(
+        self, client, auth_headers, db_session, link_image_to_user
+    ):
+        img, v = _make_private_version(db_session, "d3", "k/d3")
+        link_image_to_user(img.id)
         db_session.commit()
 
         # /serve's body depends on the x-safe-mode request header, so a cache

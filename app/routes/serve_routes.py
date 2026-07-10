@@ -1,14 +1,32 @@
 from fastapi import APIRouter, Depends, HTTPException, Response
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
 from ..db import get_db
 from ..deps import get_auth_ctx
-from ..models import Image, ImageVersion
+from ..models import Image, ImageVersion, UserImageLink
 from ..policy import AuthCtx, can_view_version
 from ..s3 import get_s3
 
 router = APIRouter(tags=["serve"])
+
+
+def _caller_owns_image(db: Session, ctx: AuthCtx | None, image_id: int) -> bool:
+    """True iff the caller owns the image: service tokens are trusted for
+    everything; user tokens must hold a UserImageLink for the image;
+    anonymous callers own nothing."""
+    if ctx is None:
+        return False
+    if ctx.is_service:
+        return True
+    link = db.execute(
+        select(UserImageLink).where(
+            UserImageLink.image_id == image_id,
+            UserImageLink.user_id == ctx.subject,
+        )
+    ).scalar_one_or_none()
+    return link is not None
 
 
 def _stream_version(
@@ -51,9 +69,13 @@ def serve_version(
     ):
         raise HTTPException(status_code=404, detail="not found")
 
-    # policy: private requires caller to have a link; tenant/public/catalog handled via can_view_version
-    if not can_view_version(ctx, v.visibility, None, v.age_rating):
-        raise HTTPException(status_code=403, detail="forbidden")
+    # policy: private requires caller to own the image (UserImageLink or
+    # service token); tenant/public/catalog handled via can_view_version.
+    # Denials on non-public versions are 404, not 403 -- a private image must
+    # be indistinguishable from a nonexistent one (no enumeration oracle).
+    caller_owns = _caller_owns_image(db, ctx, img.id)
+    if not can_view_version(ctx, v.visibility, None, v.age_rating, caller_owns=caller_owns):
+        raise HTTPException(status_code=404, detail="not found")
 
     # age gating
     target = v
