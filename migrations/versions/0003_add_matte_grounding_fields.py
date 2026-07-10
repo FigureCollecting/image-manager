@@ -21,8 +21,12 @@ def upgrade() -> None:
             sa.Column("matted", sa.Boolean, nullable=False, server_default=sa.false())
         )
         batch_op.add_column(sa.Column("bottom_margin_frac", sa.Float, nullable=True))
-        batch_op.add_column(sa.Column("contact_band_center_x_frac", sa.Float, nullable=True))
-        batch_op.add_column(sa.Column("contact_band_width_frac", sa.Float, nullable=True))
+        batch_op.add_column(
+            sa.Column("contact_band_center_x_frac", sa.Float, nullable=True)
+        )
+        batch_op.add_column(
+            sa.Column("contact_band_width_frac", sa.Float, nullable=True)
+        )
         batch_op.add_column(sa.Column("thumbhash", sa.String(64), nullable=True))
         batch_op.add_column(sa.Column("dominant_color", sa.String(32), nullable=True))
 
