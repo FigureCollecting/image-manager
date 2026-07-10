@@ -1,14 +1,53 @@
-FROM python:3.12-slim AS base
+# syntax=docker/dockerfile:1
+#
+# --- BiRefNet matting backend: base image + CUDA/cuDNN pin rationale ------
+# onnxruntime-gpu 1.27.0 (latest on PyPI as of this writing, released
+# 2026-06-18) dropped CUDA 12 as its default GPU package: its own release
+# notes say "CUDA 12 packages are deprecated, please move to CUDA 13
+# ASAP", and its optional pip extras confirm the pairing it was actually
+# built against --
+#   nvidia-cuda-runtime-cu13 ~=13.0   (extra "cuda")
+#   nvidia-cudnn-cu13        ~=9.0    (extra "cudnn")
+# i.e. CUDA 13.x + cuDNN 9.x. A mismatched CUDA/cuDNN does NOT fail the
+# build or the container start -- onnxruntime silently falls back to
+# CPUExecutionProvider (the same hazard class as any nvidia-cudnn
+# cu12/cu13 pip-wheel collision: a mismatched wheel overwrites the .so
+# files a GPU library expects, and the failure is silent, not a crash).
+# Rather than lean on the pip [cuda]/[cudnn] extras alone, this image
+# bases directly on an NVIDIA CUDA 13 image that already ships matching
+# CUDA 13.x runtime + cuDNN 9.x system libraries via LD_LIBRARY_PATH, so
+# there is one single, verifiable source of truth for the pin.
+# app.workers.matting.BiRefNetMattingBackend._get_session() additionally
+# checks at runtime that CUDAExecutionProvider actually loaded and raises
+# rather than silently degrading if it didn't.
+#
+# Tag verified to exist via the Docker Hub v2 API (nvidia/cuda tags,
+# name=cudnn-runtime-ubuntu24.04) at authoring time.
+FROM nvidia/cuda:13.3.0-cudnn-runtime-ubuntu24.04 AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    DEBIAN_FRONTEND=noninteractive \
+    PATH="/opt/venv/bin:${PATH}"
 
+# Ubuntu 24.04 (this base image's OS) ships Python 3.12 via apt, matching
+# the python = "^3.12" pin in pyproject.toml. python3.12-venv is used
+# (rather than pip --break-system-packages) because Ubuntu's apt-installed
+# Python is PEP 668 externally-managed -- a venv is the clean way around
+# that inside a single-purpose container. libvips42t64 is Ubuntu 24.04's
+# actual runtime package name for libvips (verified via apt-cache madison;
+# renamed with the "t64" suffix from Debian's plain "libvips" as part of
+# Ubuntu noble's 64-bit time_t transition).
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.12 \
+    python3.12-venv \
     build-essential \
     libpq-dev \
-    libvips \
+    libvips42t64 \
     curl \
-    && rm -rf /var/lib/apt/lists/*
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && python3.12 -m venv /opt/venv
 
 WORKDIR /app
 
@@ -17,6 +56,38 @@ COPY pyproject.toml /app/
 RUN pip install --no-cache-dir poetry==1.8.3 && \
     poetry export -f requirements.txt --only main -o /tmp/requirements.txt --without-hashes && \
     pip install --no-cache-dir -r /tmp/requirements.txt
+
+# onnxruntime-gpu is intentionally NOT a pyproject.toml dependency: it's a
+# deploy-only, GPU-only package (see app/workers/matting.py module
+# docstring) that application code and tests never import directly, so
+# the shared dependency set -- and CI, which never builds this image --
+# stays GPU-free. Pinned exactly to match the base image's CUDA 13.x /
+# cuDNN 9.x pair documented above.
+RUN pip install --no-cache-dir onnxruntime-gpu==1.27.0
+
+# --- BiRefNet ONNX weights --------------------------------------------
+# onnx-community/BiRefNet-ONNX on Hugging Face (MIT licensed ONNX export
+# of ZhengPeng7/BiRefNet, itself MIT licensed -- "Bilateral Reference for
+# High-Resolution Dichotomous Image Segmentation", CAAI AIR'24). The fp16
+# export (~490MB) is baked in rather than the full fp32 model.onnx
+# (~973MB) to roughly halve image size and GPU memory footprint; swap the
+# URL below to .../onnx/model.onnx if fp16 precision loss is ever
+# unacceptable for a given deployment.
+#
+# NOTE: MATTING_MODEL_PATH is set here so the weights are always present
+# and ready in this image, but MATTING_BACKEND is deliberately left unset
+# -- activating "birefnet" (vs. the CPU-only "stub" default) is a runtime
+# deploy-environment decision (e.g. a k3s/Coolify env var on a GPU node),
+# not baked into the image itself. Setting MATTING_BACKEND=birefnet here
+# would make this same image fail matte requests when run without a GPU
+# attached (e.g. local docker-compose dev, where the worker service builds
+# this Dockerfile with no --gpus device) since BiRefNetMattingBackend
+# refuses to run without CUDAExecutionProvider rather than silently
+# degrading to CPU.
+ENV MATTING_MODEL_PATH=/models/birefnet/model_fp16.onnx
+RUN mkdir -p "$(dirname "${MATTING_MODEL_PATH}")" && \
+    curl -fL "https://huggingface.co/onnx-community/BiRefNet-ONNX/resolve/main/onnx/model_fp16.onnx" \
+      -o "${MATTING_MODEL_PATH}"
 
 COPY app /app/app
 
