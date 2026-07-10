@@ -86,6 +86,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
+          file: Dockerfile.api
           push: false
           tags: image-manager:test
           cache-from: type=gha
