@@ -91,6 +91,8 @@ def add_item(
     _check_album_access(db.get(Album, album_id), ctx)
     # The caller must also own the image being bound into the album.
     _check_image_ownership(db, payload.image_id, ctx)
+    # TODO(C1): payload.version_id is not validated to belong to image_id;
+    # needs the grant model to bind version->image consistently.
     position = payload.position
     if position is None:
         cnt = db.execute(select(AlbumItem).where(AlbumItem.album_id == album_id)).scalars().all()

@@ -68,6 +68,9 @@ def get_gallery(
     db: Session = Depends(get_db),  # noqa: B008
     ctx: AuthCtx = Depends(require_auth_ctx),  # noqa: B008
 ) -> GalleryDetailResponse:
+    # TODO(C1): galleries are fully open to any authenticated caller
+    # (FigureGallery has no owner column); needs the grant model. Do NOT add a
+    # service-only stopgap -- it would break the ingest flow.
     entries = (
         db.query(FigureGallery)
         .filter(

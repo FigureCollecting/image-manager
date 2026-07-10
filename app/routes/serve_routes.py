@@ -74,6 +74,9 @@ def serve_version(
     # Denials on non-public versions are 404, not 403 -- a private image must
     # be indistinguishable from a nonexistent one (no enumeration oracle).
     caller_owns = _caller_owns_image(db, ctx, img.id)
+    # TODO(C1): owner_tenant_id hardcoded None makes tenant visibility
+    # unreachable here; needs a real owner-tenant lookup (grant model), not a
+    # relaxed gate.
     if not can_view_version(ctx, v.visibility, None, v.age_rating, caller_owns=caller_owns):
         raise HTTPException(status_code=404, detail="not found")
 
@@ -116,6 +119,8 @@ def public_serve(image_id: int, version_id: int, db: Session = Depends(get_db)) 
         # an enumeration oracle. A non-public version must be
         # indistinguishable from a nonexistent one.
         raise HTTPException(status_code=404, detail="not found")
+    # TODO(C1): public adult content is not age-gated on this anonymous route;
+    # needs the grant/age model before enforcing here.
     # (image_id, version_id) is a stable, content-addressed identifier --
     # a version's bytes never change after creation -- so this is safe to
     # cache aggressively at any layer (browser, CDN).

@@ -66,6 +66,8 @@ def search_albums(
 ) -> AlbumSearchResponse:
     limit = max(1, min(limit, 100))
     stmt: Select[tuple[Album]] = select(Album).where(Album.deleted_at.is_(None))
+    # TODO(C1): album search scopes by tenant while image search scopes by
+    # owner link; reconcile owner-vs-tenant consistency under the grant model.
     if not ctx.is_service:
         # Non-service callers see ONLY their own tenant's albums. A caller
         # without a tenant sees nothing, and null-tenant albums are never

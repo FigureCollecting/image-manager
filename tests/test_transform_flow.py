@@ -517,8 +517,9 @@ class TestExternalRefs:
         assert r.status_code == 404
         # No ref was persisted.
         assert (
-            db_session.execute(select(ExternalRef).where(ExternalRef.ref_id == "f1"))
-            .scalar_one_or_none()
+            db_session.execute(
+                select(ExternalRef).where(ExternalRef.ref_id == "f1")
+            ).scalar_one_or_none()
             is None
         )
 
@@ -567,8 +568,9 @@ class TestExternalRefs:
         )
         assert r.status_code == 404
         assert (
-            db_session.execute(select(ExternalRef).where(ExternalRef.ref_id == "f2"))
-            .scalar_one_or_none()
+            db_session.execute(
+                select(ExternalRef).where(ExternalRef.ref_id == "f2")
+            ).scalar_one_or_none()
             is None
         )
 
@@ -667,9 +669,7 @@ class TestExternalRefs:
         )
         assert r.status_code == 404
 
-    def test_create_ref_without_version(
-        self, client, auth_headers, db_session, link_image_to_user
-    ):
+    def test_create_ref_without_version(self, client, auth_headers, db_session, link_image_to_user):
         img = Image(sha256="d2" * 32, bytes=100, mime="image/jpeg", storage_key="k/d2")
         db_session.add(img)
         db_session.flush()

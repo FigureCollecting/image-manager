@@ -68,9 +68,7 @@ class TestCompleteUpload:
         assert link is not None
         assert link.role == "owner"
 
-    def test_hyphenless_subject_gets_ownership_link(
-        self, client, make_auth_headers, db_session
-    ):
+    def test_hyphenless_subject_gets_ownership_link(self, client, make_auth_headers, db_session):
         """A user whose subject has no hyphen (a valid 32-hex-char UUID) must
         still get an ownership link on complete -- the old `"-" in subject`
         heuristic locked such users out of every newly-tightened path
@@ -94,9 +92,7 @@ class TestCompleteUpload:
         r = client.get(f"/images/{image_id}", headers=headers)
         assert r.status_code == 200
 
-    def test_service_token_gets_no_ownership_link(
-        self, client, service_headers, db_session
-    ):
+    def test_service_token_gets_no_ownership_link(self, client, service_headers, db_session):
         """Service tokens own nothing and need no link -- they are trusted
         globally, so no UserImageLink should be created for them."""
         sha = "f" * 64

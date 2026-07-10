@@ -92,6 +92,8 @@ def by_external_ref(
 
     # Never presign a non-public version the caller cannot view; 404 so a
     # denied version is indistinguishable from a nonexistent one.
+    # TODO(C1): owner_tenant_id hardcoded None makes tenant visibility
+    # unreachable here; needs a real owner-tenant lookup (grant model).
     if not can_view_version(ctx, v.visibility, None, v.age_rating, caller_owns=caller_owns):
         raise HTTPException(status_code=404, detail="not found")
 
