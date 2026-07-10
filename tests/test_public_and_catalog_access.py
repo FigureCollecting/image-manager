@@ -24,6 +24,20 @@ def _mock_s3(body: bytes) -> MagicMock:
     return mock_s3
 
 
+def _mock_s3_keyed(bodies: dict[str, bytes]) -> MagicMock:
+    """Mock S3 whose get_object returns different bytes per storage key, so a
+    test can prove WHICH object was streamed."""
+    mock_s3 = MagicMock()
+
+    def _get_object(**kwargs):  # type: ignore[no-untyped-def]
+        body = MagicMock()
+        body.read.return_value = bodies[kwargs["Key"]]
+        return {"Body": body}
+
+    mock_s3.get_object.side_effect = _get_object
+    return mock_s3
+
+
 def _make_private_version(db_session, sha_seed: str, key: str) -> tuple[Image, ImageVersion]:
     img = Image(sha256=sha_seed * 32, bytes=100, mime="image/jpeg", storage_key=key)
     db_session.add(img)
@@ -241,6 +255,138 @@ class TestPublicServe:
 
         r = client.get(f"/public/{img.id}@{v.id}", follow_redirects=False)
         assert r.status_code == 403
+
+
+class TestSafeModeAltSwap:
+    """The safe-mode alt must be a live version of the SAME image. Anything
+    else is an IDOR: an attacker points their version's alt_for_version_id at
+    a victim's version and safe-mode /serve streams the victim's bytes."""
+
+    def _age_rated_with_alt(
+        self, db_session, link_image_to_user, *, sha_seed: str, key: str, alt_id: int | None
+    ) -> tuple[Image, ImageVersion]:
+        img = Image(sha256=sha_seed * 32, bytes=100, mime="image/jpeg", storage_key=key)
+        db_session.add(img)
+        db_session.flush()
+        link_image_to_user(img.id)
+        v = ImageVersion(
+            image_id=img.id,
+            version_no=1,
+            transform_spec={},
+            mime="image/jpeg",
+            width=100,
+            height=100,
+            bytes=100,
+            storage_key=key,
+            visibility="private",
+            age_rating=1,
+            alt_for_version_id=alt_id,
+        )
+        db_session.add(v)
+        db_session.commit()
+        return img, v
+
+    def test_cross_image_alt_404_no_victim_bytes(
+        self, client, auth_headers, db_session, link_image_to_user
+    ):
+        # Victim's private version -- the caller owns NO link to it.
+        _victim_img, victim_v = _make_private_version(db_session, "x1", "k/x1")
+        # Attacker's own image, age-rated, alt pointer aimed at the victim.
+        img, v = self._age_rated_with_alt(
+            db_session, link_image_to_user, sha_seed="x2", key="k/x2", alt_id=victim_v.id
+        )
+
+        headers = {**auth_headers, "x-safe-mode": "1"}
+        with patch(
+            "app.routes.serve_routes.get_s3",
+            return_value=_mock_s3_keyed({"k/x1": b"victim-bytes", "k/x2": b"attacker-bytes"}),
+        ):
+            r = client.get(f"/serve/{img.id}@{v.id}", headers=headers, follow_redirects=False)
+        assert r.status_code == 404
+        assert b"victim-bytes" not in r.content
+
+    def test_soft_deleted_alt_404(self, client, auth_headers, db_session, link_image_to_user):
+        img, v = self._age_rated_with_alt(
+            db_session, link_image_to_user, sha_seed="x3", key="k/x3", alt_id=None
+        )
+        alt = ImageVersion(
+            image_id=img.id,
+            version_no=2,
+            transform_spec={},
+            mime="image/jpeg",
+            width=100,
+            height=100,
+            bytes=100,
+            storage_key="k/x3-safe",
+            visibility="private",
+            age_rating=0,
+            deleted_at=dt.datetime.now(dt.UTC),
+        )
+        db_session.add(alt)
+        db_session.flush()
+        v.alt_for_version_id = alt.id
+        db_session.commit()
+
+        headers = {**auth_headers, "x-safe-mode": "1"}
+        with patch(
+            "app.routes.serve_routes.get_s3",
+            return_value=_mock_s3_keyed({"k/x3": b"adult-bytes", "k/x3-safe": b"revoked-bytes"}),
+        ):
+            r = client.get(f"/serve/{img.id}@{v.id}", headers=headers, follow_redirects=False)
+        assert r.status_code == 404
+        assert r.content == b'{"detail":"not found"}'
+
+    def test_dangling_alt_404_not_original(
+        self, client, auth_headers, db_session, link_image_to_user
+    ):
+        # A dangling alt pointer must NOT fall back to streaming the
+        # age-rated original in safe mode.
+        img, v = self._age_rated_with_alt(
+            db_session, link_image_to_user, sha_seed="x4", key="k/x4", alt_id=999999
+        )
+
+        headers = {**auth_headers, "x-safe-mode": "1"}
+        with patch(
+            "app.routes.serve_routes.get_s3",
+            return_value=_mock_s3_keyed({"k/x4": b"adult-bytes"}),
+        ):
+            r = client.get(f"/serve/{img.id}@{v.id}", headers=headers, follow_redirects=False)
+        assert r.status_code == 404
+        assert b"adult-bytes" not in r.content
+
+    def test_same_image_live_alt_streams_for_owner(
+        self, client, auth_headers, db_session, link_image_to_user
+    ):
+        # The legit flow keeps working: a live safe alt on the SAME image
+        # swaps in and streams for the owner.
+        img, v = self._age_rated_with_alt(
+            db_session, link_image_to_user, sha_seed="x5", key="k/x5", alt_id=None
+        )
+        alt = ImageVersion(
+            image_id=img.id,
+            version_no=2,
+            transform_spec={},
+            mime="image/jpeg",
+            width=100,
+            height=100,
+            bytes=100,
+            storage_key="k/x5-safe",
+            visibility="private",
+            age_rating=0,
+        )
+        db_session.add(alt)
+        db_session.flush()
+        v.alt_for_version_id = alt.id
+        db_session.commit()
+
+        headers = {**auth_headers, "x-safe-mode": "1"}
+        with patch(
+            "app.routes.serve_routes.get_s3",
+            return_value=_mock_s3_keyed({"k/x5": b"adult-bytes", "k/x5-safe": b"safe-bytes"}),
+        ):
+            r = client.get(f"/serve/{img.id}@{v.id}", headers=headers, follow_redirects=False)
+        assert r.status_code == 200
+        assert r.content == b"safe-bytes"
 
 
 class TestVisibilityEnforcement:

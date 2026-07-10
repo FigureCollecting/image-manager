@@ -150,6 +150,121 @@ class TestCreateVersion:
         )
         assert r.status_code == 404
 
+    def test_create_version_foreign_safe_alt_404(
+        self, client, auth_headers, db_session, link_image_to_user
+    ):
+        """create_safe_alt_for pointing at a version of an image the caller
+        does not own must 404 -- otherwise the stored alt_for_version_id lets
+        safe-mode /serve stream the victim's bytes (alt-swap IDOR)."""
+        img_a = Image(sha256="a7" * 32, bytes=100, mime="image/jpeg", storage_key="k/a7")
+        img_b = Image(sha256="a8" * 32, bytes=100, mime="image/jpeg", storage_key="k/a8")
+        db_session.add_all([img_a, img_b])
+        db_session.flush()
+        link_image_to_user(img_a.id)  # caller owns A only
+        v_a = ImageVersion(
+            image_id=img_a.id,
+            version_no=1,
+            transform_spec={},
+            mime="image/jpeg",
+            width=200,
+            height=200,
+            bytes=100,
+            storage_key="k/a7",
+            visibility="private",
+            age_rating=0,
+        )
+        v_b = ImageVersion(
+            image_id=img_b.id,
+            version_no=1,
+            transform_spec={},
+            mime="image/jpeg",
+            width=200,
+            height=200,
+            bytes=100,
+            storage_key="k/a8",
+            visibility="private",
+            age_rating=0,
+        )
+        db_session.add_all([v_a, v_b])
+        db_session.commit()
+
+        r = client.post(
+            f"/images/{img_a.id}/versions",
+            json={"transform_spec": {}, "create_safe_alt_for": v_b.id},
+            headers=auth_headers,
+        )
+        assert r.status_code == 404
+        # No version carrying the poisoned alt pointer was created.
+        versions = (
+            db_session.execute(select(ImageVersion).where(ImageVersion.image_id == img_a.id))
+            .scalars()
+            .all()
+        )
+        assert len(versions) == 1
+
+    def test_create_version_nonexistent_safe_alt_404(
+        self, client, auth_headers, db_session, link_image_to_user
+    ):
+        """A create_safe_alt_for that does not exist must 404 exactly like an
+        unowned one -- same no-oracle rule as base_version_id."""
+        img = Image(sha256="a9" * 32, bytes=100, mime="image/jpeg", storage_key="k/a9")
+        db_session.add(img)
+        db_session.flush()
+        link_image_to_user(img.id)
+        v1 = ImageVersion(
+            image_id=img.id,
+            version_no=1,
+            transform_spec={},
+            mime="image/jpeg",
+            width=200,
+            height=200,
+            bytes=100,
+            storage_key="k/a9",
+            visibility="private",
+            age_rating=0,
+        )
+        db_session.add(v1)
+        db_session.commit()
+
+        r = client.post(
+            f"/images/{img.id}/versions",
+            json={"transform_spec": {}, "create_safe_alt_for": 999999},
+            headers=auth_headers,
+        )
+        assert r.status_code == 404
+
+    def test_create_version_own_safe_alt_ok(
+        self, client, auth_headers, db_session, link_image_to_user
+    ):
+        """A create_safe_alt_for referencing the caller's own version still
+        works -- the ownership gate must not break the legit safe-alt flow."""
+        img = Image(sha256="aa" * 32, bytes=100, mime="image/jpeg", storage_key="k/aa")
+        db_session.add(img)
+        db_session.flush()
+        link_image_to_user(img.id)
+        v1 = ImageVersion(
+            image_id=img.id,
+            version_no=1,
+            transform_spec={},
+            mime="image/jpeg",
+            width=200,
+            height=200,
+            bytes=100,
+            storage_key="k/aa",
+            visibility="private",
+            age_rating=0,
+        )
+        db_session.add(v1)
+        db_session.commit()
+
+        r = client.post(
+            f"/images/{img.id}/versions",
+            json={"transform_spec": {}, "create_safe_alt_for": v1.id},
+            headers=auth_headers,
+        )
+        assert r.status_code == 200
+        assert r.json()["version_no"] == 2
+
     def test_create_version_no_base_400(self, client, auth_headers, db_session, link_image_to_user):
         img = Image(sha256="a3" * 32, bytes=100, mime="image/jpeg", storage_key="k/a3")
         db_session.add(img)

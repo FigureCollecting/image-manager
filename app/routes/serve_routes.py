@@ -83,8 +83,14 @@ def serve_version(
     if safe_mode and v.age_rating and v.age_rating > 0:
         if v.alt_for_version_id:
             alt = db.get(ImageVersion, v.alt_for_version_id)
-            if alt:
-                target = alt
+            # The safe alt MUST be a non-deleted version of the SAME image the
+            # caller already cleared the ownership/visibility gate for. A
+            # cross-image or soft-deleted alt is an IDOR (stream someone
+            # else's bytes) -- reject with 404, never fall back to the
+            # age-rated original (which safe mode must not expose).
+            if not alt or alt.image_id != img.id or alt.deleted_at is not None:
+                raise HTTPException(status_code=404, detail="not found")
+            target = alt
         else:
             raise HTTPException(status_code=403, detail="age-gated")
 

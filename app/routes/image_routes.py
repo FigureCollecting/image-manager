@@ -185,6 +185,16 @@ def create_version(
         if not base:
             raise HTTPException(status_code=404, detail="not found")
         _check_image_ownership(db, base.image_id, ctx)
+    if payload.create_safe_alt_for is not None:
+        # The safe alt becomes alt_for_version_id, which safe-mode /serve will
+        # swap in. It must reference a version of an image the caller owns,
+        # else an attacker could point their version's alt at a victim's
+        # private version and stream the victim's bytes. 404 either way so
+        # existing-but-unowned ids stay indistinguishable from nonexistent.
+        alt = db.get(ImageVersion, payload.create_safe_alt_for)
+        if not alt:
+            raise HTTPException(status_code=404, detail="not found")
+        _check_image_ownership(db, alt.image_id, ctx)
     if not base:
         base = (
             db.execute(
