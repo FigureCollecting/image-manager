@@ -357,6 +357,76 @@ class TestSafeModeAltSwap:
         assert r.status_code == 404
         assert b"adult-bytes" not in r.content
 
+    def _public_age_rated_with_alt(
+        self, db_session, *, sha_seed: str, key: str, alt_key: str, alt_visibility: str
+    ) -> tuple[Image, ImageVersion, ImageVersion]:
+        """A PUBLIC age-rated version whose safe alt (same image, live) has
+        its own visibility -- the alt's own gate must still be enforced."""
+        img = Image(sha256=sha_seed * 32, bytes=100, mime="image/jpeg", storage_key=key)
+        db_session.add(img)
+        db_session.flush()
+        v = ImageVersion(
+            image_id=img.id,
+            version_no=1,
+            transform_spec={},
+            mime="image/jpeg",
+            width=100,
+            height=100,
+            bytes=100,
+            storage_key=key,
+            visibility="public",
+            age_rating=1,
+        )
+        alt = ImageVersion(
+            image_id=img.id,
+            version_no=2,
+            transform_spec={},
+            mime="image/jpeg",
+            width=100,
+            height=100,
+            bytes=100,
+            storage_key=alt_key,
+            visibility=alt_visibility,
+            age_rating=0,
+        )
+        db_session.add_all([v, alt])
+        db_session.flush()
+        v.alt_for_version_id = alt.id
+        db_session.commit()
+        return img, v, alt
+
+    def test_private_alt_on_public_version_404_for_anonymous_safe_mode(self, client, db_session):
+        # The alt's OWN visibility must be re-checked after the swap: an owner
+        # who aims a PUBLIC age-rated version's alt at a PRIVATE same-image
+        # version must not leak the private bytes to anonymous safe callers.
+        img, v, _alt = self._public_age_rated_with_alt(
+            db_session, sha_seed="x6", key="k/x6", alt_key="k/x6-priv", alt_visibility="private"
+        )
+
+        with patch(
+            "app.routes.serve_routes.get_s3",
+            return_value=_mock_s3_keyed({"k/x6": b"adult-bytes", "k/x6-priv": b"private-bytes"}),
+        ):
+            r = client.get(f"/serve/{img.id}@{v.id}?mode=safe", follow_redirects=False)
+        assert r.status_code == 404
+        assert b"private-bytes" not in r.content
+        assert b"adult-bytes" not in r.content
+
+    def test_public_alt_on_public_version_streams_for_anonymous_safe_mode(self, client, db_session):
+        # Legit swap keeps working: a PUBLIC same-image alt streams to
+        # anonymous safe-mode callers.
+        img, v, _alt = self._public_age_rated_with_alt(
+            db_session, sha_seed="x7", key="k/x7", alt_key="k/x7-safe", alt_visibility="public"
+        )
+
+        with patch(
+            "app.routes.serve_routes.get_s3",
+            return_value=_mock_s3_keyed({"k/x7": b"adult-bytes", "k/x7-safe": b"safe-bytes"}),
+        ):
+            r = client.get(f"/serve/{img.id}@{v.id}?mode=safe", follow_redirects=False)
+        assert r.status_code == 200
+        assert r.content == b"safe-bytes"
+
     def test_same_image_live_alt_streams_for_owner(
         self, client, auth_headers, db_session, link_image_to_user
     ):

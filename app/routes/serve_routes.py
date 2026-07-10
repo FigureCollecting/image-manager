@@ -93,6 +93,16 @@ def serve_version(
             # age-rated original (which safe mode must not expose).
             if not alt or alt.image_id != img.id or alt.deleted_at is not None:
                 raise HTTPException(status_code=404, detail="not found")
+            # The alt's OWN visibility/age must be re-checked: clearing the
+            # gate for the requested version does not clear it for the alt.
+            # Otherwise an owner could point a PUBLIC age-rated version's alt
+            # at a PRIVATE same-image version and stream those private bytes
+            # to anonymous safe-mode callers. caller_owns is for img.id, which
+            # is the alt's image too (same-image enforced above).
+            if not can_view_version(
+                ctx, alt.visibility, None, alt.age_rating, caller_owns=caller_owns
+            ):
+                raise HTTPException(status_code=404, detail="not found")
             target = alt
         else:
             raise HTTPException(status_code=403, detail="age-gated")
