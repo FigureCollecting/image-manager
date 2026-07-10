@@ -10,6 +10,7 @@ network.
 
 from __future__ import annotations
 
+import datetime as dt
 from unittest.mock import MagicMock, patch
 
 from app.models import Image, ImageVersion
@@ -194,3 +195,82 @@ class TestVisibilityEnforcement:
         assert r.status_code == 200
         assert r.headers.get("Cache-Control") == "private, max-age=600"
         assert r.headers.get("ETag") == "v1" * 32
+
+
+class TestSoftDeleteAndCacheVariance:
+    """Revocation and cache-correctness on the byte-stream serve paths."""
+
+    def test_serve_soft_deleted_version_404(self, client, auth_headers, db_session):
+        img = Image(sha256="d1" * 32, bytes=100, mime="image/jpeg", storage_key="k/d1")
+        db_session.add(img)
+        db_session.flush()
+        v = ImageVersion(
+            image_id=img.id,
+            version_no=1,
+            transform_spec={},
+            mime="image/jpeg",
+            width=100,
+            height=100,
+            bytes=100,
+            storage_key="k/d1",
+            visibility="public",
+            age_rating=0,
+            deleted_at=dt.datetime.now(dt.UTC),
+        )
+        db_session.add(v)
+        db_session.commit()
+
+        # A soft-deleted (revoked) version must not stream, even though it's public.
+        with patch("app.routes.serve_routes.get_s3", return_value=_mock_s3(b"revoked")):
+            r = client.get(f"/serve/{img.id}@{v.id}", headers=auth_headers, follow_redirects=False)
+        assert r.status_code == 404
+
+    def test_public_serve_soft_deleted_version_404(self, client, db_session):
+        img = Image(sha256="d2" * 32, bytes=100, mime="image/jpeg", storage_key="k/d2")
+        db_session.add(img)
+        db_session.flush()
+        v = ImageVersion(
+            image_id=img.id,
+            version_no=1,
+            transform_spec={},
+            mime="image/jpeg",
+            width=100,
+            height=100,
+            bytes=100,
+            storage_key="k/d2",
+            visibility="public",
+            age_rating=0,
+            deleted_at=dt.datetime.now(dt.UTC),
+        )
+        db_session.add(v)
+        db_session.commit()
+
+        with patch("app.routes.serve_routes.get_s3", return_value=_mock_s3(b"revoked")):
+            r = client.get(f"/public/{img.id}@{v.id}", follow_redirects=False)
+        assert r.status_code == 404
+
+    def test_serve_varies_on_safe_mode_header(self, client, auth_headers, db_session):
+        img = Image(sha256="d3" * 32, bytes=100, mime="image/jpeg", storage_key="k/d3")
+        db_session.add(img)
+        db_session.flush()
+        v = ImageVersion(
+            image_id=img.id,
+            version_no=1,
+            transform_spec={},
+            mime="image/jpeg",
+            width=100,
+            height=100,
+            bytes=100,
+            storage_key="k/d3",
+            visibility="private",
+            age_rating=0,
+        )
+        db_session.add(v)
+        db_session.commit()
+
+        # /serve's body depends on the x-safe-mode request header, so a cache
+        # must key on it or it will replay one variant for the other.
+        with patch("app.routes.serve_routes.get_s3", return_value=_mock_s3(b"data")):
+            r = client.get(f"/serve/{img.id}@{v.id}", headers=auth_headers, follow_redirects=False)
+        assert r.status_code == 200
+        assert "x-safe-mode" in r.headers.get("Vary", "").lower()

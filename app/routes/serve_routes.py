@@ -11,7 +11,9 @@ from ..s3 import get_s3
 router = APIRouter(tags=["serve"])
 
 
-def _stream_version(version: ImageVersion, *, cache_control: str, etag: str) -> Response:
+def _stream_version(
+    version: ImageVersion, *, cache_control: str, etag: str, vary: str | None = None
+) -> Response:
     """Byte-stream a version's bytes through the app rather than 302
     redirecting to a presigned S3/MinIO URL. A presigned URL for the
     internal minio:9000 host is not resolvable outside the Docker network
@@ -25,6 +27,8 @@ def _stream_version(version: ImageVersion, *, cache_control: str, etag: str) -> 
     resp = Response(content=data, media_type=version.mime or "application/octet-stream")
     resp.headers["Cache-Control"] = cache_control
     resp.headers["ETag"] = etag
+    if vary:
+        resp.headers["Vary"] = vary
     return resp
 
 
@@ -38,7 +42,13 @@ def serve_version(
 ) -> Response:
     img = db.get(Image, image_id)
     v = db.get(ImageVersion, version_id)
-    if not img or not v or v.image_id != img.id:
+    if (
+        not img
+        or not v
+        or v.image_id != img.id
+        or img.deleted_at is not None
+        or v.deleted_at is not None
+    ):
         raise HTTPException(status_code=404, detail="not found")
 
     # policy: private requires caller to have a link; tenant/public/catalog handled via can_view_version
@@ -56,14 +66,22 @@ def serve_version(
         else:
             raise HTTPException(status_code=403, detail="age-gated")
 
-    return _stream_version(target, cache_control="private, max-age=600", etag=img.sha256)
+    return _stream_version(
+        target, cache_control="private, max-age=600", etag=img.sha256, vary="X-Safe-Mode"
+    )
 
 
 @router.get("/public/{image_id}@{version_id}")
 def public_serve(image_id: int, version_id: int, db: Session = Depends(get_db)) -> Response:  # noqa: B008
     img = db.get(Image, image_id)
     v = db.get(ImageVersion, version_id)
-    if not img or not v or v.image_id != img.id:
+    if (
+        not img
+        or not v
+        or v.image_id != img.id
+        or img.deleted_at is not None
+        or v.deleted_at is not None
+    ):
         raise HTTPException(status_code=404, detail="not found")
     if v.visibility != "public":
         raise HTTPException(status_code=403, detail="forbidden")
