@@ -177,6 +177,14 @@ def create_version(
     base: ImageVersion | None = None
     if payload.base_version_id:
         base = db.get(ImageVersion, payload.base_version_id)
+        # An explicitly-requested base must exist AND belong to an image the
+        # caller owns; 404 either way so existing-but-unowned version ids are
+        # indistinguishable from nonexistent ones. Without the ownership
+        # check a caller could launder another owner's bytes through
+        # base_version_id into an image they control.
+        if not base:
+            raise HTTPException(status_code=404, detail="not found")
+        _check_image_ownership(db, base.image_id, ctx)
     if not base:
         base = (
             db.execute(

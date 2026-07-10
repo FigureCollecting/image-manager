@@ -64,6 +64,93 @@ class TestCreateVersion:
         assert r.status_code == 200
         assert r.json()["version_no"] == 2
 
+    def test_create_version_foreign_base_404(
+        self, client, auth_headers, db_session, link_image_to_user
+    ):
+        """base_version_id pointing at another owner's image must 404 --
+        otherwise a caller could launder someone else's bytes into an image
+        they own."""
+        from sqlalchemy import select
+
+        img_a = Image(sha256="a4" * 32, bytes=100, mime="image/jpeg", storage_key="k/a4")
+        img_b = Image(sha256="a5" * 32, bytes=100, mime="image/jpeg", storage_key="k/a5")
+        db_session.add_all([img_a, img_b])
+        db_session.flush()
+        link_image_to_user(img_a.id)  # caller owns A only
+        v_a = ImageVersion(
+            image_id=img_a.id,
+            version_no=1,
+            transform_spec={},
+            mime="image/jpeg",
+            width=200,
+            height=200,
+            bytes=100,
+            storage_key="k/a4",
+            visibility="private",
+            age_rating=0,
+        )
+        v_b = ImageVersion(
+            image_id=img_b.id,
+            version_no=1,
+            transform_spec={},
+            mime="image/jpeg",
+            width=200,
+            height=200,
+            bytes=100,
+            storage_key="k/a5",
+            visibility="private",
+            age_rating=0,
+        )
+        db_session.add_all([v_a, v_b])
+        db_session.commit()
+
+        r = client.post(
+            f"/images/{img_a.id}/versions",
+            json={"transform_spec": {}, "base_version_id": v_b.id},
+            headers=auth_headers,
+        )
+        assert r.status_code == 404
+        # No version was created on image A beyond the original.
+        versions = (
+            db_session.execute(select(ImageVersion).where(ImageVersion.image_id == img_a.id))
+            .scalars()
+            .all()
+        )
+        assert len(versions) == 1
+
+    def test_create_version_nonexistent_base_404(
+        self, client, auth_headers, db_session, link_image_to_user
+    ):
+        """An explicitly-specified base_version_id that does not exist must
+        404 exactly like an unowned one -- silently falling back to the
+        image's first version would let an attacker distinguish existing
+        (404) from nonexistent (200) version ids."""
+        img = Image(sha256="a6" * 32, bytes=100, mime="image/jpeg", storage_key="k/a6")
+        db_session.add(img)
+        db_session.flush()
+        link_image_to_user(img.id)
+        v1 = ImageVersion(
+            image_id=img.id,
+            version_no=1,
+            transform_spec={},
+            mime="image/jpeg",
+            width=200,
+            height=200,
+            bytes=100,
+            storage_key="k/a6",
+            visibility="private",
+            age_rating=0,
+        )
+        db_session.add(v1)
+        db_session.commit()
+
+        r = client.post(
+            f"/images/{img.id}/versions",
+            json={"transform_spec": {}, "base_version_id": 999999},
+            headers=auth_headers,
+        )
+        assert r.status_code == 404
+
     def test_create_version_no_base_400(self, client, auth_headers, db_session, link_image_to_user):
         img = Image(sha256="a3" * 32, bytes=100, mime="image/jpeg", storage_key="k/a3")
         db_session.add(img)
