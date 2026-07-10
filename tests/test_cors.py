@@ -53,4 +53,4 @@ class TestCORSSettings:
     def test_cors_origins_default_is_explicit_allowlist(self, test_settings):
         """Default cors_origins should be an explicit allow-list, not wildcard."""
         assert "*" not in test_settings.cors_origins
-        assert "https://figurecollecting.com" in test_settings.cors_origins
+        assert any(o == "https://figurecollecting.com" for o in test_settings.cors_origins)
