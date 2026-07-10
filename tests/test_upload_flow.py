@@ -485,6 +485,36 @@ class TestStagingKeyCallerBinding:
         assert r.status_code == 404
         mock_s3.get_object.assert_not_called()
 
+    def test_encoded_and_backslash_traversal_rejected(self, client, auth_headers, db_session):
+        """The docstring claims full defense against a normalizing proxy, but
+        a "/"-split of `..` segments misses backslash traversal and any
+        percent-encoded token a proxy might decode. Every one of these keys
+        nominally starts inside the caller's namespace yet could be folded
+        onto a foreign object -- reject each, 404, never fetched."""
+        victim_data = b"victim-encoded-bytes"
+        sha = _sha(victim_data)
+        final_key = f"{sha[:2]}/{sha[2:4]}/{sha}.jpg"
+        _make_victim_image(db_session, victim_data, final_key)
+
+        bad_keys = [
+            f"{_STAGING}/..\\..\\{final_key}",
+            f"{_STAGING}/%2e%2e/{final_key}",
+            f"{_STAGING}/%2e%2e%2f{final_key}",
+            f"{_STAGING}/subdir%2f..%2f..",
+            f"{_STAGING}/..%2F..%2F{final_key}",
+            f"{_STAGING}/a..b/{final_key}",
+        ]
+        for key in bad_keys:
+            mock_s3 = _staging_s3(victim_data)
+            with _patch_upload_s3(mock_s3):
+                r = client.post(
+                    "/images/complete",
+                    json={"sha256": sha, "key": key, "mime": "image/jpeg", "size": 20},
+                    headers=auth_headers,
+                )
+            assert r.status_code == 404, key
+            mock_s3.get_object.assert_not_called()
+
     def test_initiate_issued_staging_key_completes_for_caller(
         self, client, auth_headers, db_session
     ):

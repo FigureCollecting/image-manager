@@ -74,12 +74,19 @@ def _require_caller_staging_key(key: str, ctx: AuthCtx) -> None:
     an attacker point the proof at the victim's already-stored object (or any
     versions/albums key) and mint an owner link without possessing a single
     byte. Only keys inside the caller's own staging namespace -- exactly what
-    initiate_upload issues -- may be proven. `..` segments are rejected so no
+    initiate_upload issues -- may be proven. Traversal is rejected so no
     path-normalizing gateway in front of the object store can fold a
-    namespaced key onto a foreign one. Fails 404 in every mode,
-    indistinguishable from a missing staging object: no oracle."""
+    namespaced key onto a foreign one: any `..` substring, any backslash, and
+    any percent-encoded `.`/`/` (%2e/%2f/%5c, case-insensitive) that such a
+    proxy might decode is refused outright -- not just `/`-split `..`
+    segments. Fails 404 in every mode, indistinguishable from a missing
+    staging object: no oracle."""
     prefix = f"uploads/{ctx.subject}/"
-    if not ctx.subject or not key.startswith(prefix) or ".." in key.split("/"):
+    lowered = key.lower()
+    traversal = (
+        ".." in key or "\\" in key or "%2e" in lowered or "%2f" in lowered or "%5c" in lowered
+    )
+    if not ctx.subject or not key.startswith(prefix) or traversal:
         raise HTTPException(status_code=404, detail="staging object not found")
 
 
