@@ -29,10 +29,12 @@ class TestCreateTag:
 
 
 class TestTagImage:
-    def test_tag_image_by_id(self, client, auth_headers, db_session):
+    def test_tag_image_by_id(self, client, auth_headers, db_session, link_image_to_user):
         img = Image(sha256="aa" * 32, bytes=50, mime="image/jpeg", storage_key="k/aa")
         tag = Tag(name="sunset", scope="global")
         db_session.add_all([img, tag])
+        db_session.flush()
+        link_image_to_user(img.id)
         db_session.commit()
 
         r = client.post(
@@ -43,10 +45,12 @@ class TestTagImage:
         assert r.status_code == 200
         assert r.json()["count"] == 1
 
-    def test_tag_image_by_name(self, client, auth_headers, db_session):
+    def test_tag_image_by_name(self, client, auth_headers, db_session, link_image_to_user):
         img = Image(sha256="bb" * 32, bytes=50, mime="image/jpeg", storage_key="k/bb")
         tag = Tag(name="nature", scope="global")
         db_session.add_all([img, tag])
+        db_session.flush()
+        link_image_to_user(img.id)
         db_session.commit()
 
         r = client.post(
@@ -57,10 +61,12 @@ class TestTagImage:
         assert r.status_code == 200
         assert r.json()["count"] == 1
 
-    def test_tag_image_deduplicates(self, client, auth_headers, db_session):
+    def test_tag_image_deduplicates(self, client, auth_headers, db_session, link_image_to_user):
         img = Image(sha256="cc" * 32, bytes=50, mime="image/jpeg", storage_key="k/cc")
         tag = Tag(name="dup", scope="global")
         db_session.add_all([img, tag])
+        db_session.flush()
+        link_image_to_user(img.id)
         db_session.commit()
 
         # Tag twice
@@ -68,10 +74,44 @@ class TestTagImage:
         r = client.post(f"/tags/images/{img.id}", json={"tag_ids": [tag.id]}, headers=auth_headers)
         assert r.status_code == 200
 
+    def test_tag_image_not_owned_404(self, client, auth_headers, db_session):
+        # Tagging an image without a UserImageLink must 404 and write nothing.
+        from sqlalchemy import select
+
+        from app.models import ImageTag
+
+        img = Image(sha256="ab" * 32, bytes=50, mime="image/jpeg", storage_key="k/ab")
+        tag = Tag(name="notyours", scope="global")
+        db_session.add_all([img, tag])
+        db_session.commit()
+
+        r = client.post(
+            f"/tags/images/{img.id}", json={"tag_ids": [tag.id]}, headers=auth_headers
+        )
+        assert r.status_code == 404
+        rows = (
+            db_session.execute(select(ImageTag).where(ImageTag.image_id == img.id))
+            .scalars()
+            .all()
+        )
+        assert rows == []
+
+    def test_tag_image_service_token_ok(self, client, service_headers, db_session):
+        # Service tokens are trusted; no UserImageLink required.
+        img = Image(sha256="ae" * 32, bytes=50, mime="image/jpeg", storage_key="k/ae")
+        tag = Tag(name="svc-tag", scope="global")
+        db_session.add_all([img, tag])
+        db_session.commit()
+
+        r = client.post(
+            f"/tags/images/{img.id}", json={"tag_ids": [tag.id]}, headers=service_headers
+        )
+        assert r.status_code == 200
+
 
 class TestTagAlbum:
     def test_tag_album(self, client, auth_headers, db_session):
-        album = Album(title="Tagged Album")
+        album = Album(title="Tagged Album", tenant_id=_TENANT_ID)
         tag = Tag(name="travel", scope="global")
         db_session.add_all([album, tag])
         db_session.commit()
@@ -83,6 +123,29 @@ class TestTagAlbum:
         )
         assert r.status_code == 200
         assert r.json()["count"] == 1
+
+    def test_tag_album_not_owned_404(self, client, auth_headers, db_session):
+        # A null-tenant album with no owner must not be taggable by an
+        # unrelated caller; nothing may be written.
+        from sqlalchemy import select
+
+        from app.models import AlbumTag
+
+        album = Album(title="Orphan Album", tenant_id=None, owner_user_id=None)
+        tag = Tag(name="orphan-tag", scope="global")
+        db_session.add_all([album, tag])
+        db_session.commit()
+
+        r = client.post(
+            f"/tags/albums/{album.id}", json={"tag_ids": [tag.id]}, headers=auth_headers
+        )
+        assert r.status_code == 404
+        rows = (
+            db_session.execute(select(AlbumTag).where(AlbumTag.album_id == album.id))
+            .scalars()
+            .all()
+        )
+        assert rows == []
 
 
 class TestSearchImages:
