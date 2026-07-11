@@ -8,7 +8,7 @@ from ..config import get_settings
 def make_celery() -> Celery:
     s = get_settings()
     app = Celery(
-        "image_manager",
+        "media_manager",
         broker=s.redis_url,
         backend=s.redis_url,
         include=["app.workers.tasks"],
