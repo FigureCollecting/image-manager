@@ -314,7 +314,7 @@ class ReorderGalleryRequest(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Display + grounding metadata (image-manager -> fc-mobile contract)
+# Display + grounding metadata (media-manager -> fc-mobile contract)
 #
 # Field names/nesting here are the FROZEN cross-service contract mirrored by
 # fc-shared's FigureDisplayMeta (fc-shared/src/types/index.ts) -- do not

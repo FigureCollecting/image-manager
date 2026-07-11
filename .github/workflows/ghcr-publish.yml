@@ -32,7 +32,7 @@ jobs:
         id: meta-api
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/figurecollecting/image-manager-api
+          images: ghcr.io/figurecollecting/media-manager-api
 
       - name: Build and push API image
         uses: docker/build-push-action@v6
@@ -67,7 +67,7 @@ jobs:
         id: meta-worker
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/figurecollecting/image-manager-worker
+          images: ghcr.io/figurecollecting/media-manager-worker
 
       - name: Build and push worker image
         uses: docker/build-push-action@v6

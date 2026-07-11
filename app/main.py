@@ -33,7 +33,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logging.getLogger(__name__).info("app_stop")
 
 
-app = FastAPI(title="image-manager", lifespan=lifespan)
+app = FastAPI(title="media-manager", lifespan=lifespan)
 
 _settings_cors = get_settings()
 app.add_middleware(RateLimitMiddleware)

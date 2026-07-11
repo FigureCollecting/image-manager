@@ -1,4 +1,4 @@
-# image-manager
+# media-manager
 
 Production-ready image microservice built with FastAPI, SQLAlchemy 2.x, Postgres, Celery, and S3/MinIO. Includes multi-tenant links, albums, tags, age-gating with safe variants, content-addressable storage, background transforms, and search.
 

@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "image-manager"
+name = "media-manager"
 version = "0.1.0"
 description = "A production-ready image microservice with FastAPI, Postgres, S3/MinIO, Celery, and search"
 authors = []

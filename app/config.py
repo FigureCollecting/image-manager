@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     )
 
     # App
-    app_name: str = "image-manager"
+    app_name: str = "media-manager"
     environment: Literal["development", "production", "test"] = "development"
     log_level: str = "INFO"
     allow_dev_tokens: bool = False

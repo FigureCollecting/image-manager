@@ -178,7 +178,7 @@ class TestIngestUrlSSRFGuard:
         [
             "http://169.254.169.254/latest/meta-data/",
             "http://127.0.0.1/admin",
-            "http://minio:9000/image-manager/uploads/x",
+            "http://minio:9000/media-manager/uploads/x",
             "http://10.0.0.1/internal",
             "http://172.18.0.5/registry",
             "http://192.168.1.1/router",

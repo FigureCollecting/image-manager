@@ -67,14 +67,14 @@ jobs:
           context: .
           file: Dockerfile.api
           load: true
-          tags: image-manager:scan
+          tags: media-manager:scan
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Run Trivy container scan
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: 'image-manager:scan'
+          image-ref: 'media-manager:scan'
           format: 'sarif'
           output: 'container-results.sarif'
           severity: 'CRITICAL,HIGH'
