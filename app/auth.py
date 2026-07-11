@@ -89,4 +89,10 @@ def issue_dev_token(
     # user token
     if not user_id:
         raise ValueError("user_id required for user tokens")
+    if user_id.startswith("service:"):
+        # deps.get_auth_ctx flags any "service:" subject as a globally
+        # trusted service principal -- copying such a user_id verbatim into
+        # the subject would let anyone mint service trust via the user path.
+        # Legit service tokens go through the aud="service:..." path above.
+        raise ValueError("user_id must not start with 'service:'")
     return create_token(settings, subject=user_id, tenant_id=tenant_id, scopes=[])

@@ -7,6 +7,8 @@ soft delete, reorder, and Celery task orchestration.
 from __future__ import annotations
 
 import io
+import ipaddress
+import socket
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -15,6 +17,35 @@ from app.models import ImageVersion
 from fastapi.testclient import TestClient
 from PIL import Image
 from sqlalchemy.orm import Session
+
+_PUBLIC_IP = "93.184.216.34"
+
+#: Deterministic stand-in for socket.getaddrinfo so no test touches real DNS:
+#: CDN-ish hosts resolve publicly, "minio" resolves the way Docker's embedded
+#: DNS would (a private network address), everything else is NXDOMAIN.
+_FAKE_DNS = {
+    "static.mfc.net": _PUBLIC_IP,
+    "mfc.net": _PUBLIC_IP,
+    "cdn.example.com": _PUBLIC_IP,
+    "minio": "172.18.0.5",
+}
+
+
+def _fake_getaddrinfo(
+    host: str, port: int | None, *args: object, **kwargs: object
+) -> list[tuple[socket.AddressFamily, socket.SocketKind, int, str, tuple[str, int]]]:
+    try:
+        ip = str(ipaddress.ip_address(host))
+    except ValueError:
+        if host not in _FAKE_DNS:
+            raise socket.gaierror(socket.EAI_NONAME, f"unknown host: {host}") from None
+        ip = _FAKE_DNS[host]
+    family = socket.AF_INET6 if ":" in ip else socket.AF_INET
+    return [(family, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", (ip, port or 80))]
+
+
+def _patch_dns():
+    return patch("socket.getaddrinfo", side_effect=_fake_getaddrinfo)
 
 
 def _studio_photo_bytes(size: int = 64) -> bytes:
@@ -37,7 +68,10 @@ class TestGalleryIngest:
     def test_ingest_queues_images(
         self, client: TestClient, service_headers: dict, db_session: Session
     ) -> None:
-        with patch("app.routes.gallery_routes.ingest_gallery_images.delay") as mock_delay:
+        with (
+            _patch_dns(),
+            patch("app.routes.gallery_routes.ingest_gallery_images.delay") as mock_delay,
+        ):
             resp = client.post(
                 "/galleries/ingest",
                 json={
@@ -75,7 +109,10 @@ class TestGalleryIngest:
         db_session.add(gallery)
         db_session.flush()
 
-        with patch("app.routes.gallery_routes.ingest_gallery_images.delay"):
+        with (
+            _patch_dns(),
+            patch("app.routes.gallery_routes.ingest_gallery_images.delay"),
+        ):
             resp = client.post(
                 "/galleries/ingest",
                 json={
@@ -116,6 +153,85 @@ class TestGalleryIngest:
             )
         assert resp.status_code == 200
         assert resp.json()["imagesQueued"] == 0
+
+
+class TestIngestUrlSSRFGuard:
+    """POST /galleries/ingest must reject URLs whose fetch would reach an
+    internal target (SSRF): cloud metadata, loopback, RFC1918/ULA ranges,
+    the object store itself. Rejection happens at request time -- a poisoned
+    batch enqueues NOTHING, so the worker never fetches."""
+
+    def _ingest(self, client: TestClient, service_headers: dict, url: str):
+        with (
+            _patch_dns(),
+            patch("app.routes.gallery_routes.ingest_gallery_images.delay") as mock_delay,
+        ):
+            resp = client.post(
+                "/galleries/ingest",
+                json={"figureId": "mfc-ssrf", "images": [{"url": url, "position": 0}]},
+                headers=service_headers,
+            )
+        return resp, mock_delay
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "http://169.254.169.254/latest/meta-data/",
+            "http://127.0.0.1/admin",
+            "http://minio:9000/image-manager/uploads/x",
+            "http://10.0.0.1/internal",
+            "http://172.18.0.5/registry",
+            "http://192.168.1.1/router",
+            "http://[::1]/",
+            "http://[fc00::1]/",
+            "http://localhost:8000/",
+            "http://0.0.0.0/",
+            "ftp://mfc.net/1.jpg",
+            "file:///etc/passwd",
+        ],
+    )
+    def test_internal_targets_rejected_nothing_enqueued(
+        self, client: TestClient, service_headers: dict, url: str
+    ) -> None:
+        resp, mock_delay = self._ingest(client, service_headers, url)
+        assert resp.status_code == 422
+        mock_delay.assert_not_called()
+
+    def test_unresolvable_hostname_rejected(
+        self, client: TestClient, service_headers: dict
+    ) -> None:
+        resp, mock_delay = self._ingest(client, service_headers, "https://nxdomain.invalid/x.jpg")
+        assert resp.status_code == 422
+        mock_delay.assert_not_called()
+
+    def test_public_url_still_ingests(self, client: TestClient, service_headers: dict) -> None:
+        resp, mock_delay = self._ingest(client, service_headers, "https://cdn.example.com/x.jpg")
+        assert resp.status_code == 200
+        assert resp.json()["imagesQueued"] == 1
+        mock_delay.assert_called_once()
+
+    def test_mixed_batch_rejected_atomically(
+        self, client: TestClient, service_headers: dict
+    ) -> None:
+        """One bad URL poisons the whole batch: reject the request outright
+        so a mostly-legit payload cannot smuggle one internal fetch."""
+        with (
+            _patch_dns(),
+            patch("app.routes.gallery_routes.ingest_gallery_images.delay") as mock_delay,
+        ):
+            resp = client.post(
+                "/galleries/ingest",
+                json={
+                    "figureId": "mfc-ssrf-mixed",
+                    "images": [
+                        {"url": "https://cdn.example.com/ok.jpg", "position": 0},
+                        {"url": "http://169.254.169.254/latest/meta-data/", "position": 1},
+                    ],
+                },
+                headers=service_headers,
+            )
+        assert resp.status_code == 422
+        mock_delay.assert_not_called()
 
 
 class TestGalleryGet:
@@ -475,6 +591,7 @@ class TestIngestGalleryTask:
             patch("app.workers.tasks.get_s3", return_value=mock_s3),
             patch("app.config.get_settings", return_value=mock_settings),
             patch("app.workers.tasks.httpx") as mock_httpx,
+            _patch_dns(),
         ):
             mock_httpx.get.return_value = mock_response
 
@@ -538,6 +655,7 @@ class TestIngestGalleryTask:
             patch("app.workers.tasks.get_s3", return_value=mock_s3),
             patch("app.config.get_settings", return_value=mock_settings),
             patch("app.workers.tasks.httpx") as mock_httpx,
+            _patch_dns(),
         ):
             mock_httpx.get.return_value = mock_response
 
@@ -586,6 +704,7 @@ class TestIngestGalleryTask:
             patch("app.workers.tasks.get_s3", return_value=mock_s3),
             patch("app.config.get_settings", return_value=mock_settings),
             patch("app.workers.tasks.httpx") as mock_httpx,
+            _patch_dns(),
         ):
             mock_httpx.get.return_value = mock_response
 
@@ -656,6 +775,7 @@ class TestIngestGalleryTask:
             patch("app.config.get_settings", return_value=mock_settings),
             patch("app.workers.tasks.httpx") as mock_httpx,
             patch("app.workers.tasks._apply_transforms", side_effect=RuntimeError("boom")),
+            _patch_dns(),
         ):
             mock_httpx.get.return_value = mock_response
 
@@ -678,6 +798,42 @@ class TestIngestGalleryTask:
             .all()
         )
         assert [v.version_no for v in versions] == [1]
+
+    def test_task_blocks_internal_url_before_fetch(self, db_session: Session) -> None:
+        """Defense-in-depth: even if a blocked URL reaches the worker (direct
+        .delay call, entries enqueued before the route gate existed), it must
+        be dropped BEFORE httpx.get -- no fetch, no gallery row."""
+        from contextlib import contextmanager
+
+        from app.workers.tasks import ingest_gallery_images
+
+        mock_s3 = MagicMock()
+        mock_settings = MagicMock()
+        mock_settings.s3_bucket = "test-bucket"
+
+        @contextmanager
+        def _fake_ws(session_factory=None):
+            yield db_session
+
+        with (
+            patch("app.workers.tasks.worker_session", _fake_ws),
+            patch("app.workers.tasks.get_s3", return_value=mock_s3),
+            patch("app.config.get_settings", return_value=mock_settings),
+            patch("app.workers.tasks.httpx") as mock_httpx,
+            _patch_dns(),
+        ):
+            ingest_gallery_images(
+                figure_id="mfc-ssrf-task",
+                images=[{"url": "http://169.254.169.254/latest/meta-data/", "position": 0}],
+            )
+            mock_httpx.get.assert_not_called()
+
+        from app.models import FigureGallery
+
+        entries = (
+            db_session.query(FigureGallery).filter(FigureGallery.figure_id == "mfc-ssrf-task").all()
+        )
+        assert entries == []
 
     def test_task_watermark_does_not_corrupt_grounding_scalars(self, db_session: Session) -> None:
         """The bottom-right watermark corner must not be mistaken for the
@@ -717,6 +873,7 @@ class TestIngestGalleryTask:
             patch("app.workers.tasks.get_s3", return_value=mock_s3),
             patch("app.config.get_settings", return_value=mock_settings),
             patch("app.workers.tasks.httpx") as mock_httpx,
+            _patch_dns(),
         ):
             mock_httpx.get.return_value = mock_response
 

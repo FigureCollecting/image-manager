@@ -96,9 +96,10 @@ class CreateVersionRequest(BaseModel):
 
 
 class CreateVersionResponse(BaseModel):
+    # No storage_key here: internal object keys stay internal. Clients
+    # address versions via /serve/{image_id}@{version_id}.
     version_id: int
     version_no: int
-    storage_key: str
 
 
 class SetVisibilityRequest(BaseModel):
@@ -189,6 +190,11 @@ class ShareAlbumResponse(BaseModel):
 
 
 class AlbumCoverResponse(BaseModel):
+    # TODO(C1): storage_key exposes an internal object key, but today it is
+    # the ONLY pointer a client has to the (public-read, async-generated)
+    # cover object -- and the value returned is a "cover-pending" placeholder
+    # that doesn't even match the final content-hashed key. Replace with a
+    # served URL once the grant model lands.
     storage_key: str
 
 

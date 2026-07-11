@@ -5,6 +5,8 @@ TDD: These tests should FAIL initially, then pass after implementing soft delete
 
 from app.models import Album, Image, ImageVersion
 
+_TENANT_ID = "11111111-2222-3333-4444-555555555555"
+
 
 class TestDeleteImage:
     def test_delete_image(self, client, auth_headers, db_session, link_image_to_user):
@@ -64,7 +66,7 @@ class TestDeleteImage:
 
 class TestDeleteAlbum:
     def test_delete_album(self, client, auth_headers, db_session):
-        album = Album(title="Delete Me")
+        album = Album(title="Delete Me", tenant_id=_TENANT_ID)
         db_session.add(album)
         db_session.commit()
 
@@ -73,7 +75,7 @@ class TestDeleteAlbum:
         assert r.json()["ok"] is True
 
     def test_deleted_album_not_in_get(self, client, auth_headers, db_session):
-        album = Album(title="Gone")
+        album = Album(title="Gone", tenant_id=_TENANT_ID)
         db_session.add(album)
         db_session.commit()
 
@@ -82,7 +84,7 @@ class TestDeleteAlbum:
         assert r.status_code == 404
 
     def test_deleted_album_not_in_search(self, client, auth_headers, db_session):
-        album = Album(title="UniqueDeleteTest123")
+        album = Album(title="UniqueDeleteTest123", tenant_id=_TENANT_ID)
         db_session.add(album)
         db_session.commit()
 

@@ -59,36 +59,62 @@ class TestCanViewVersionTenant:
         assert can_view_version(ctx, "tenant", None, 0) is False
 
 
-class TestCanViewVersionAgeGating:
-    def test_private_no_age_passes(self) -> None:
+class TestCanViewVersionPrivate:
+    def test_private_denied_without_ownership(self) -> None:
+        # An authenticated non-owner must never view a private version.
         ctx = AuthCtx(subject="u1", tenant_id=None, is_service=False, scopes=[])
-        assert can_view_version(ctx, "private", None, 0) is True
+        assert can_view_version(ctx, "private", None, 0) is False
 
+    def test_private_denied_without_ctx(self) -> None:
+        # Anonymous callers must never view a private version.
+        assert can_view_version(None, "private", None, 0) is False
+
+    def test_private_owner_allowed(self) -> None:
+        ctx = AuthCtx(subject="u1", tenant_id=None, is_service=False, scopes=[])
+        assert can_view_version(ctx, "private", None, 0, caller_owns=True) is True
+
+
+class TestCanViewVersionAgeGating:
     def test_safe_mode_raises_threshold(self) -> None:
         ctx = AuthCtx(subject="u1", tenant_id=None, is_service=False, scopes=[], safe_mode=True)
         # age_rating=1, safe_mode threshold=1 → 1 > 1 is False → allowed
-        assert can_view_version(ctx, "private", None, 1) is True
+        assert can_view_version(ctx, "private", None, 1, caller_owns=True) is True
         # age_rating=2, safe_mode threshold=1 → 2 > 1 → denied
-        assert can_view_version(ctx, "private", None, 2) is False
+        assert can_view_version(ctx, "private", None, 2, caller_owns=True) is False
 
     def test_share_threshold_gates(self) -> None:
         ctx = AuthCtx(subject="u1", tenant_id=None, is_service=False, scopes=[])
         # share_threshold=3, age=3 → 3 > 3 is False → allowed
-        assert can_view_version(ctx, "private", None, 3, share_threshold=3) is True
+        assert (
+            can_view_version(ctx, "private", None, 3, share_threshold=3, caller_owns=True) is True
+        )
         # share_threshold=2, age=3 → 3 > 2 → denied
-        assert can_view_version(ctx, "private", None, 3, share_threshold=2) is False
+        assert (
+            can_view_version(ctx, "private", None, 3, share_threshold=2, caller_owns=True) is False
+        )
 
     def test_safe_mode_and_share_threshold_uses_max(self) -> None:
         ctx = AuthCtx(subject="u1", tenant_id=None, is_service=False, scopes=[], safe_mode=True)
         # safe_mode threshold=1, share_threshold=3 → max=3, age=3 → allowed
-        assert can_view_version(ctx, "private", None, 3, share_threshold=3) is True
+        assert (
+            can_view_version(ctx, "private", None, 3, share_threshold=3, caller_owns=True) is True
+        )
         # safe_mode threshold=1, share_threshold=3 → max=3, age=4 → denied
-        assert can_view_version(ctx, "private", None, 4, share_threshold=3) is False
+        assert (
+            can_view_version(ctx, "private", None, 4, share_threshold=3, caller_owns=True) is False
+        )
 
-    def test_no_ctx_no_threshold(self) -> None:
-        # private with no ctx, age=0 → passes (private enforced at query time)
-        assert can_view_version(None, "private", None, 0) is True
+    def test_owner_still_age_gated(self) -> None:
+        # Ownership does not bypass safe-mode age gating.
+        ctx = AuthCtx(subject="u1", tenant_id=None, is_service=False, scopes=[], safe_mode=True)
+        assert can_view_version(ctx, "private", None, 5, caller_owns=True) is False
 
-    def test_no_ctx_age_above_zero_denied(self) -> None:
-        # age=1 > threshold=0 → denied
-        assert can_view_version(None, "private", None, 1) is False
+
+class TestCanViewVersionUnknownVisibility:
+    def test_unknown_visibility_denied(self) -> None:
+        # Default deny: any unrecognized visibility value must not be viewable.
+        ctx = AuthCtx(subject="u1", tenant_id="t1", is_service=False, scopes=[])
+        assert can_view_version(ctx, "shared", "t1", 0, caller_owns=True) is False
+
+    def test_empty_visibility_denied(self) -> None:
+        assert can_view_version(None, "", None, 0) is False

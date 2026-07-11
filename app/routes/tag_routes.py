@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..deps import require_auth_ctx
-from ..models import AlbumTag, ImageTag, Tag
+from ..models import Album, AlbumTag, ImageTag, Tag
 from ..policy import AuthCtx
 from ..schemas import (
     CreateTagRequest,
@@ -12,6 +12,8 @@ from ..schemas import (
     TagItemsRequest,
     TagItemsResponse,
 )
+from .album_routes import _check_album_access
+from .image_routes import _check_image_ownership
 
 router = APIRouter(prefix="/tags", tags=["tags"])
 
@@ -35,8 +37,12 @@ def tag_image(
     db: Session = Depends(get_db),  # noqa: B008
     ctx: AuthCtx = Depends(require_auth_ctx),  # noqa: B008
 ) -> TagItemsResponse:
+    # Only the image's owner (UserImageLink) or a service token may tag it.
+    _check_image_ownership(db, image_id, ctx)
     ids: list[int] = list(payload.tag_ids)
     if payload.names:
+        # TODO(C1): resolving tags by global name is an existence oracle and
+        # allows attaching foreign tags; needs the tag tenant/ownership model.
         tags = db.execute(select(Tag).where(Tag.name.in_(payload.names))).scalars().all()
         ids.extend([t.id for t in tags])
     ids = list({int(i) for i in ids})
@@ -57,8 +63,13 @@ def tag_album(
     db: Session = Depends(get_db),  # noqa: B008
     ctx: AuthCtx = Depends(require_auth_ctx),  # noqa: B008
 ) -> TagItemsResponse:
+    # Same fail-closed guard as the album handlers: service, tenant match,
+    # or owner match; otherwise 404.
+    _check_album_access(db.get(Album, album_id), ctx)
     ids: list[int] = list(payload.tag_ids)
     if payload.names:
+        # TODO(C1): resolving tags by global name is an existence oracle and
+        # allows attaching foreign tags; needs the tag tenant/ownership model.
         tags = db.execute(select(Tag).where(Tag.name.in_(payload.names))).scalars().all()
         ids.extend([t.id for t in tags])
     ids = list({int(i) for i in ids})

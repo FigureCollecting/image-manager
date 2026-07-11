@@ -6,6 +6,10 @@ After wiring Pydantic models, they should all pass.
 
 from __future__ import annotations
 
+import hashlib
+import io
+from unittest.mock import MagicMock, patch
+
 from app.models import Album, Image
 
 # ---------------------------------------------------------------------------
@@ -89,11 +93,23 @@ class TestCompleteUploadValidation:
         assert r.status_code == 422
 
     def test_valid_complete_response_shape(self, client, auth_headers):
-        r = client.post(
-            "/images/complete",
-            json={"sha256": "a" * 64, "key": "uploads/k", "mime": "image/jpeg", "size": 1024},
-            headers=auth_headers,
-        )
+        # complete_upload proves possession by hashing the staging object, so
+        # the mock bytes must hash to the submitted sha256 -- and the key must
+        # sit inside the caller's own staging namespace.
+        data_bytes = b"shape-test-bytes"
+        mock_s3 = MagicMock()
+        mock_s3.get_object.return_value = {"Body": io.BytesIO(data_bytes)}
+        with patch("app.routes.image_routes.get_s3", return_value=mock_s3):
+            r = client.post(
+                "/images/complete",
+                json={
+                    "sha256": hashlib.sha256(data_bytes).hexdigest(),
+                    "key": "uploads/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee/k",
+                    "mime": "image/jpeg",
+                    "size": len(data_bytes),
+                },
+                headers=auth_headers,
+            )
         assert r.status_code == 200
         data = r.json()
         assert "image_id" in data
@@ -184,7 +200,12 @@ class TestShareAlbumValidation:
 
 class TestGetAlbumResponseShape:
     def test_album_detail_shape(self, client, auth_headers, db_session):
-        album = Album(title="My Album", description="desc", default_visibility="private")
+        album = Album(
+            title="My Album",
+            description="desc",
+            default_visibility="private",
+            tenant_id="11111111-2222-3333-4444-555555555555",
+        )
         db_session.add(album)
         db_session.commit()
 
@@ -240,9 +261,13 @@ class TestCreateExternalRefValidation:
         )
         assert r.status_code == 422
 
-    def test_valid_create_response_shape(self, client, auth_headers, db_session):
+    def test_valid_create_response_shape(
+        self, client, auth_headers, db_session, link_image_to_user
+    ):
         img = Image(sha256="c" * 64, bytes=50, mime="image/jpeg", storage_key="k/ext")
         db_session.add(img)
+        db_session.flush()
+        link_image_to_user(img.id)
         db_session.commit()
         r = client.post(
             "/external/refs",

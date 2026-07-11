@@ -73,7 +73,7 @@ class TestImageFullTextSearch:
 
 class TestAlbumFullTextSearch:
     def test_search_title_case_insensitive(self, client, auth_headers, db_session):
-        album = Album(title="Mountain Adventures")
+        album = Album(title="Mountain Adventures", tenant_id=_TENANT_ID)
         db_session.add(album)
         db_session.commit()
 
@@ -82,7 +82,11 @@ class TestAlbumFullTextSearch:
         assert album.id in ids
 
     def test_search_description_partial(self, client, auth_headers, db_session):
-        album = Album(title="X", description="Incredible sunset photography collection")
+        album = Album(
+            title="X",
+            description="Incredible sunset photography collection",
+            tenant_id=_TENANT_ID,
+        )
         db_session.add(album)
         db_session.commit()
 

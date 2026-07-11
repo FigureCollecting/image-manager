@@ -1,14 +1,32 @@
 from fastapi import APIRouter, Depends, HTTPException, Response
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
 from ..db import get_db
 from ..deps import get_auth_ctx
-from ..models import Image, ImageVersion
+from ..models import Image, ImageVersion, UserImageLink
 from ..policy import AuthCtx, can_view_version
 from ..s3 import get_s3
 
 router = APIRouter(tags=["serve"])
+
+
+def _caller_owns_image(db: Session, ctx: AuthCtx | None, image_id: int) -> bool:
+    """True iff the caller owns the image: service tokens are trusted for
+    everything; user tokens must hold a UserImageLink for the image;
+    anonymous callers own nothing."""
+    if ctx is None:
+        return False
+    if ctx.is_service:
+        return True
+    link = db.execute(
+        select(UserImageLink).where(
+            UserImageLink.image_id == image_id,
+            UserImageLink.user_id == ctx.subject,
+        )
+    ).scalar_one_or_none()
+    return link is not None
 
 
 def _stream_version(
@@ -51,9 +69,16 @@ def serve_version(
     ):
         raise HTTPException(status_code=404, detail="not found")
 
-    # policy: private requires caller to have a link; tenant/public/catalog handled via can_view_version
-    if not can_view_version(ctx, v.visibility, None, v.age_rating):
-        raise HTTPException(status_code=403, detail="forbidden")
+    # policy: private requires caller to own the image (UserImageLink or
+    # service token); tenant/public/catalog handled via can_view_version.
+    # Denials on non-public versions are 404, not 403 -- a private image must
+    # be indistinguishable from a nonexistent one (no enumeration oracle).
+    caller_owns = _caller_owns_image(db, ctx, img.id)
+    # TODO(C1): owner_tenant_id hardcoded None makes tenant visibility
+    # unreachable here; needs a real owner-tenant lookup (grant model), not a
+    # relaxed gate.
+    if not can_view_version(ctx, v.visibility, None, v.age_rating, caller_owns=caller_owns):
+        raise HTTPException(status_code=404, detail="not found")
 
     # age gating
     target = v
@@ -61,8 +86,24 @@ def serve_version(
     if safe_mode and v.age_rating and v.age_rating > 0:
         if v.alt_for_version_id:
             alt = db.get(ImageVersion, v.alt_for_version_id)
-            if alt:
-                target = alt
+            # The safe alt MUST be a non-deleted version of the SAME image the
+            # caller already cleared the ownership/visibility gate for. A
+            # cross-image or soft-deleted alt is an IDOR (stream someone
+            # else's bytes) -- reject with 404, never fall back to the
+            # age-rated original (which safe mode must not expose).
+            if not alt or alt.image_id != img.id or alt.deleted_at is not None:
+                raise HTTPException(status_code=404, detail="not found")
+            # The alt's OWN visibility/age must be re-checked: clearing the
+            # gate for the requested version does not clear it for the alt.
+            # Otherwise an owner could point a PUBLIC age-rated version's alt
+            # at a PRIVATE same-image version and stream those private bytes
+            # to anonymous safe-mode callers. caller_owns is for img.id, which
+            # is the alt's image too (same-image enforced above).
+            if not can_view_version(
+                ctx, alt.visibility, None, alt.age_rating, caller_owns=caller_owns
+            ):
+                raise HTTPException(status_code=404, detail="not found")
+            target = alt
         else:
             raise HTTPException(status_code=403, detail="age-gated")
 
@@ -84,7 +125,12 @@ def public_serve(image_id: int, version_id: int, db: Session = Depends(get_db)) 
     ):
         raise HTTPException(status_code=404, detail="not found")
     if v.visibility != "public":
-        raise HTTPException(status_code=403, detail="forbidden")
+        # 404, not 403: a 403 confirms the (image_id, version_id) exists,
+        # an enumeration oracle. A non-public version must be
+        # indistinguishable from a nonexistent one.
+        raise HTTPException(status_code=404, detail="not found")
+    # TODO(C1): public adult content is not age-gated on this anonymous route;
+    # needs the grant/age model before enforcing here.
     # (image_id, version_id) is a stable, content-addressed identifier --
     # a version's bytes never change after creation -- so this is safe to
     # cache aggressively at any layer (browser, CDN).
