@@ -66,7 +66,7 @@ jobs:
         uses: codecov/codecov-action@v5
         with:
           files: ./coverage.xml
-          flags: image-manager
+          flags: media-manager
           fail_ci_if_error: false
           verbose: true
 
@@ -86,7 +86,8 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
+          file: Dockerfile.api
           push: false
-          tags: image-manager:test
+          tags: media-manager:test
           cache-from: type=gha
           cache-to: type=gha,mode=max

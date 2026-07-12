@@ -19,6 +19,15 @@ class DevTokenResponse(BaseModel):
     token: str
 
 
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
+
+
+class RefreshTokenResponse(BaseModel):
+    access_token: str
+    refresh_token: str
+
+
 # ---------------------------------------------------------------------------
 # Images
 # ---------------------------------------------------------------------------
@@ -87,9 +96,10 @@ class CreateVersionRequest(BaseModel):
 
 
 class CreateVersionResponse(BaseModel):
+    # No storage_key here: internal object keys stay internal. Clients
+    # address versions via /serve/{image_id}@{version_id}.
     version_id: int
     version_no: int
-    storage_key: str
 
 
 class SetVisibilityRequest(BaseModel):
@@ -180,6 +190,11 @@ class ShareAlbumResponse(BaseModel):
 
 
 class AlbumCoverResponse(BaseModel):
+    # TODO(C1): storage_key exposes an internal object key, but today it is
+    # the ONLY pointer a client has to the (public-read, async-generated)
+    # cover object -- and the value returned is a "cover-pending" placeholder
+    # that doesn't even match the final content-hashed key. Replace with a
+    # served URL once the grant model lands.
     storage_key: str
 
 
@@ -257,3 +272,67 @@ class ExternalAssetResponse(BaseModel):
     width: int | None = None
     height: int | None = None
     url: str
+
+
+# ---------------------------------------------------------------------------
+# Figure galleries
+# ---------------------------------------------------------------------------
+
+
+class GalleryImageItem(BaseModel):
+    url: str
+    position: int
+    caption: str | None = None
+
+
+class IngestGalleryRequest(BaseModel):
+    figureId: str
+    images: list[GalleryImageItem] = []
+
+
+class IngestGalleryResponse(BaseModel):
+    figureId: str
+    imagesQueued: int
+    duplicatesSkipped: int
+
+
+class GalleryImageSummary(BaseModel):
+    id: int
+    url: str
+    position: int
+    caption: str | None = None
+
+
+class GalleryDetailResponse(BaseModel):
+    figureId: str
+    images: list[GalleryImageSummary] = []
+    count: int
+
+
+class ReorderGalleryRequest(BaseModel):
+    imageIds: list[int] = []
+
+
+# ---------------------------------------------------------------------------
+# Display + grounding metadata (media-manager -> fc-mobile contract)
+#
+# Field names/nesting here are the FROZEN cross-service contract mirrored by
+# fc-shared's FigureDisplayMeta (fc-shared/src/types/index.ts) -- do not
+# rename/retype without updating both sides. In particular, contact_band_*
+# is stored as FLAT columns on ImageVersion but must be served NESTED here.
+# ---------------------------------------------------------------------------
+
+
+class ContactBandResponse(BaseModel):
+    centerXFrac: float
+    widthFrac: float
+
+
+class DisplayMetaResponse(BaseModel):
+    matted: bool = False
+    matteImageId: str | None = None
+    matteVersionId: str | None = None
+    bottomMarginFrac: float | None = None
+    contactBand: ContactBandResponse | None = None
+    thumbhash: str | None = None
+    dominantColor: str | None = None

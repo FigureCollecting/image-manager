@@ -73,7 +73,9 @@ def db_engine():
 
 @pytest.fixture()
 def db_session(db_engine) -> Generator[Session, None, None]:  # type: ignore[type-arg]
-    TestSession = sessionmaker(bind=db_engine, autoflush=False, autocommit=False, expire_on_commit=False)
+    TestSession = sessionmaker(
+        bind=db_engine, autoflush=False, autocommit=False, expire_on_commit=False
+    )
     session = TestSession()
     try:
         yield session
@@ -118,11 +120,17 @@ def client(db_session: Session, test_settings: Settings) -> Generator[TestClient
     app.dependency_overrides[get_db] = _override_get_db
     app.dependency_overrides[get_settings] = _override_get_settings
 
+    # Clear rate-limit state so tests don't bleed into each other
+    from app.rate_limit import _buckets
+
+    _buckets.clear()
+
     # Patch Celery tasks to be no-ops so they don't require a broker
     with (
         patch("app.workers.tasks.verify_and_register_object.delay", new=MagicMock()),
         patch("app.workers.tasks.create_transformed_version.delay", new=MagicMock()),
         patch("app.workers.tasks.generate_album_cover.delay", new=MagicMock()),
+        patch("app.workers.tasks.ingest_gallery_images.delay", new=MagicMock()),
     ):
         yield TestClient(app, raise_server_exceptions=False)
 
@@ -175,3 +183,26 @@ def make_auth_headers(test_settings: Settings):
         return {"Authorization": f"Bearer {token}"}
 
     return _make
+
+
+@pytest.fixture()
+def link_image_to_user(db_session: Session):
+    """Create a UserImageLink so the test user owns the given image."""
+    from app.models import UserImageLink
+
+    def _link(
+        image_id: int,
+        user_id: str = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        tenant_id: str = "11111111-2222-3333-4444-555555555555",
+    ) -> None:
+        link = UserImageLink(
+            user_id=user_id,
+            tenant_id=tenant_id,
+            image_id=image_id,
+            current_version_id=None,
+            role="owner",
+        )
+        db_session.add(link)
+        db_session.flush()
+
+    return _link

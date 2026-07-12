@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "image-manager"
+name = "media-manager"
 version = "0.1.0"
 description = "A production-ready image microservice with FastAPI, Postgres, S3/MinIO, Celery, and search"
 authors = []
@@ -37,19 +37,8 @@ types-Pillow = "^10.2.0.20240822"
 coverage = "^7.6.0"
 pytest-cov = "^7.0.0"
 
-[tool.ruff]
-line-length = 100
-src = ["app", "tests"]
-target-version = "py312"
-
-[tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "A", "C4", "ISC", "SIM", "TCH"]
-ignore = ["E501"]
-
-[tool.ruff.format]
-quote-style = "double"
-indent-style = "space"
-docstring-code-format = true
+# Ruff config lives in ruff.toml, which takes precedence over any [tool.ruff]
+# table here -- keep it in one place to avoid divergent, silently-ignored config.
 
 [tool.mypy]
 python_version = "3.12"

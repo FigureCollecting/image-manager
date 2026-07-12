@@ -4,9 +4,14 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..deps import require_auth_ctx
-from ..models import Album, AlbumTag, Image, ImageTag, Tag
+from ..models import Album, AlbumTag, Image, ImageTag, Tag, UserImageLink
 from ..policy import AuthCtx
-from ..schemas import AlbumSearchResponse, ImageSearchResponse
+from ..schemas import (
+    AlbumSearchResponse,
+    AlbumSearchResult,
+    ImageSearchResponse,
+    ImageSearchResult,
+)
 from ..search import build_text_filter
 
 router = APIRouter(prefix="/search", tags=["search"])
@@ -23,6 +28,10 @@ def search_images(
 ) -> ImageSearchResponse:
     limit = max(1, min(limit, 100))
     stmt: Select[tuple[Image]] = select(Image).where(Image.deleted_at.is_(None))
+    if not ctx.is_service:
+        stmt = stmt.join(UserImageLink, UserImageLink.image_id == Image.id).where(
+            UserImageLink.user_id == ctx.subject
+        )
     if query:
         stmt = stmt.where(build_text_filter(db, query, Image.mime, Image.storage_key))
     if tags:
@@ -41,7 +50,7 @@ def search_images(
     results = rows[:limit]
     next_cursor = results[-1].id if has_next else None
     return ImageSearchResponse(
-        results=[{"id": r.id, "mime": r.mime, "sha256": r.sha256} for r in results],
+        results=[ImageSearchResult(id=r.id, mime=r.mime, sha256=r.sha256) for r in results],
         next_cursor=next_cursor,
     )
 
@@ -57,6 +66,15 @@ def search_albums(
 ) -> AlbumSearchResponse:
     limit = max(1, min(limit, 100))
     stmt: Select[tuple[Album]] = select(Album).where(Album.deleted_at.is_(None))
+    # TODO(C1): album search scopes by tenant while image search scopes by
+    # owner link; reconcile owner-vs-tenant consistency under the grant model.
+    if not ctx.is_service:
+        # Non-service callers see ONLY their own tenant's albums. A caller
+        # without a tenant sees nothing, and null-tenant albums are never
+        # world-visible (fail closed).
+        if ctx.tenant_id is None:
+            return AlbumSearchResponse(results=[], next_cursor=None)
+        stmt = stmt.where(Album.tenant_id == ctx.tenant_id)
     if query:
         stmt = stmt.where(build_text_filter(db, query, Album.title, Album.description))
     if tags:
@@ -75,6 +93,6 @@ def search_albums(
     results = rows[:limit]
     next_cursor = results[-1].id if has_next else None
     return AlbumSearchResponse(
-        results=[{"id": r.id, "title": r.title} for r in results],
+        results=[AlbumSearchResult(id=r.id, title=r.title) for r in results],
         next_cursor=next_cursor,
     )

@@ -2,9 +2,27 @@ line-length = 100
 target-version = "py312"
 src = ["app", "tests"]
 
+# TCH (flake8-type-checking) is intentionally omitted: it moves imports into
+# TYPE_CHECKING blocks, which breaks FastAPI/Pydantic runtime type resolution --
+# Depends() signatures (Session, Settings, AuthCtx) must be importable at runtime.
 [lint]
-select = ["E", "F", "I", "UP", "B", "A", "C4", "ISC", "SIM", "TCH"]
+select = ["E", "F", "I", "UP", "B", "A", "C4", "ISC", "SIM"]
 ignore = ["E501"]
+
+[lint.flake8-bugbear]
+# FastAPI Depends/Query/etc. in argument defaults are idiomatic and safe (not
+# mutable defaults), so they are exempt from B008.
+extend-immutable-calls = [
+    "fastapi.Depends",
+    "fastapi.Query",
+    "fastapi.Path",
+    "fastapi.Header",
+    "fastapi.Body",
+    "fastapi.Form",
+    "fastapi.File",
+    "fastapi.Cookie",
+    "fastapi.Security",
+]
 
 [format]
 quote-style = "double"
