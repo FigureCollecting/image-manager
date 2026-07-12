@@ -22,7 +22,7 @@ def get_url() -> str:
     url = os.getenv("DATABASE_URL")
     if not url:
         # fallback for local dev
-        url = "postgresql+psycopg2://postgres:postgres@postgres:5432/image_manager"
+        url = "postgresql+psycopg2://postgres:postgres@postgres:5432/media_manager"
     return url
 
 
