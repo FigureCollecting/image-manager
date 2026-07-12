@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     refresh_token_exp_minutes: int = 60 * 24 * 7
 
     # Data stores
-    database_url: str = "postgresql+psycopg2://postgres:postgres@postgres:5432/image_manager"
+    database_url: str = "postgresql+psycopg2://postgres:postgres@postgres:5432/media_manager"
     redis_url: str = "redis://redis:6379/0"
 
     # S3/MinIO
